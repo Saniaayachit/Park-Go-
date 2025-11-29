@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! – Reservations</title>
+  <link rel="stylesheet" href="reservations.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="topbar">
+    <div class="left">
+      <a href="home.html" class="logo-link" title="Go Home">
+        <img src="Park&Go!.png" alt="Park&Go! logo" class="logo-img" />
+      </a>
+      <div class="heading">
+        <div class="title">Reservations</div>
+        <div class="subtitle">Manage active bookings & view history</div>
+      </div>
+    </div>
+    <div class="right">
+      <a class="btn ghost" href="map.html">New Reservation</a>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="container">
+    <section id="panel-current" class="resv-panel" aria-label="Current reservation"></section>
+    <section id="panel-history" class="resv-panel" aria-label="Reservation history"></section>
+  </main>
+
+  <!-- Bottom Navigation (matches home/map; no dots) -->
+  <nav class="tabbar">
+    <a href="home.html" class="tab">Home</a>
+    <a href="map.html" class="tab">Map</a>
+    <a href="reservations.html" class="tab active">Reservations</a>
+    <a href="profile.html" class="tab">Profile</a>
+  </nav>
+
+  <dialog id="cancelDialog" class="modal">
+    <form method="dialog" class="modal-card">
+      <h3>Cancel reservation?</h3>
+      <p>This will free up your spot and you can book again anytime.</p>
+      <div class="row">
+        <button value="close" class="btn ghost">Keep reservation</button>
+        <button value="confirm" class="btn danger" id="confirmCancelBtn">Cancel reservation</button>
+      </div>
+    </form>
+  </dialog>
+  <!-- Script -->
+  <script>
+    const SESSION_KEY = "parkgo_current_user";
+    const RESERVATIONS_KEY = "parkgo_reservations";
+    const $  = (s, r=document) => r.querySelector(s);
+    const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+
+    const fmt = (dt) => {
+      try { return new Date(dt).toLocaleString([], { dateStyle:"medium", timeStyle:"short" }); }
+      catch { return dt; }
+    };
+    const formatStamp = (iso) => {
+      try { return new Date(iso).toLocaleString([], { dateStyle:"medium", timeStyle:"short" }); }
+      catch { return iso; }
+    };
+async function renderQrCode(target){
+      if(!target){ return; }
+      target.innerHTML = `<img src="qr-code.png" alt="QR code placeholder" />`;
+    }
+
+    const cancelDialog = document.getElementById("cancelDialog");
+    const confirmCancelBtn = document.getElementById("confirmCancelBtn");
+
+    const readAll  = () => { try { return JSON.parse(localStorage.getItem(RESERVATIONS_KEY) || "[]"); } catch { return []; } };
+    const saveAll  = (list) => localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list));
+
+    function rolloverStatusesForUser(list, user) {
+      const now = Date.now();
+      let changed = false;
+      for (const r of list) {
+        if (r.user !== user) continue;
+        if (r.status === "Active" && new Date(r.endIso).getTime() < now) {
+          r.status = "Completed";
+          changed = true;
+        }
+      }
+      if (changed) saveAll(list);
+      return list;
+    }
+
+    function cancelReservationById(targetId){
+      const all = readAll();
+      let updated = false;
+      const next = all.map(entry=>{
+        if(entry.id === targetId){
+          updated = true;
+          return { ...entry, status:"Cancelled", endIso:new Date().toISOString() };
+        }
+        return entry;
+      });
+      if(updated){
+        saveAll(next);
+        localStorage.removeItem("parkgo_selected_garage");
+      }
+      return updated;
+    }
+
+    function splitCurrentHistory(records) {
+      const now = Date.now();
+      const isActive = (r) => r.status === "Active" && new Date(r.endIso).getTime() >= now;
+      const current = records.filter(isActive).sort((a,b)=> (a.startIso||"").localeCompare(b.startIso||""));
+      const history = records.filter(r => !isActive(r)).sort((a,b)=> (b.endIso||"").localeCompare(a.endIso||""));
+      return { current, history };
+    }
+
+    function renderHistoryList(el, items, emptyTitle) {
+      if (!items.length) {
+        el.innerHTML = `
+          <div class="history-card history-empty">
+            <div class="empty-title">${emptyTitle}</div>
+            <div class="muted">Create one from the Map.</div>
+            <a class="btn primary" href="map.html" style="margin-top:12px;">Find a Spot</a>
+          </div>`;
+        return;
+      }
+      el.innerHTML = `
+        <div class="history-card">
+          <div class="history-header">
+            <h3>Recent History</h3>
+          </div>
+          <div class="history-list full">
+            ${items.map(r => `
+              <div class="history-line">
+                <div>
+                  <strong>${r.garage || "Garage"}</strong>
+                  <span>${formatStamp(r.startIso)}</span>
+                  <span>Status: ${r.status || "Completed"}</span>
+                </div>
+                <span class="history-amount">${r.total != null ? `$${Number(r.total).toFixed(2)}` : ""}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    async function renderCurrentPass(records, history){
+      const panel = $("#panel-current");
+      if(!panel){ return; }
+      if(!records.length){
+        panel.innerHTML = `
+          <article class="empty-pass-card">
+            <div>
+              <span class="pass-tag inactive">No reservation</span>
+              <h4>No active reservation</h4>
+              <p class="pass-spot">Book a spot to unlock your gate QR instantly and skip the kiosk.</p>
+            </div>
+            <a class="btn primary" href="map.html">Find a Spot</a>
+          </article>
+        `;
+        return;
+      }
+      const r = records[0];
+      panel.innerHTML = `
+        <article class="active-pass-card">
+          <div class="pass-copy">
+            <span class="pass-tag">Active Reservation</span>
+            <h4>${r.garage || "Garage"}</h4>
+            <p class="pass-spot">Level ${r.level || "—"} • Spot ${r.spot || "—"}</p>
+            <ul class="pass-details">
+              <li><span>Start</span><strong>${formatStamp(r.startIso)}</strong></li>
+              <li><span>End</span><strong>${formatStamp(r.endIso)}</strong></li>
+              <li><span>Total</span><strong>${r.total != null ? `$${Number(r.total).toFixed(2)}` : "—"}</strong></li>
+            </ul>
+            <div class="pass-meta">Reservation ID ${r.id || "—"} · ${r.status || "Active"}</div>
+            <div class="pass-actions">
+              <button class="btn danger" type="button" id="cancelReservationBtn">Cancel reservation</button>
+            </div>
+          </div>
+          <div class="pass-qr" id="currentQr"></div>
+        </article>
+      `;
+      const qrTarget = panel.querySelector("#currentQr");
+      if(qrTarget){
+        qrTarget.innerHTML = `<img src="qr-code.png" alt="QR code placeholder" />`;
+      }
+      const cancelBtn = panel.querySelector("#cancelReservationBtn");
+      if(cancelBtn){
+        cancelBtn.addEventListener("click", ()=>{
+          pendingCancelId = r.id;
+          cancelDialog?.showModal();
+        });
+      }
+    }
+
+    let pendingCancelId = null;
+    confirmCancelBtn?.addEventListener("click", async ()=>{
+      if(!pendingCancelId){ cancelDialog.close(); return; }
+      const ok = cancelReservationById(pendingCancelId);
+      cancelDialog.close();
+      pendingCancelId = null;
+      if(!ok){
+        alert("We couldn't cancel this reservation. Please refresh and try again.");
+        return;
+      }
+      await refresh();
+      window.location.href = "map.html";
+    });
+
+    async function refresh() {
+      const userEmail = localStorage.getItem(SESSION_KEY);
+      let all = userEmail ? rolloverStatusesForUser(readAll(), userEmail) : [];
+      const mine = userEmail ? all.filter(r => r.user === userEmail) : [];
+      const { current, history } = splitCurrentHistory(mine);
+
+      await renderCurrentPass(current, history);
+      renderHistoryList($("#panel-history"), history, "No past reservations");
+    }
+
+    function mount() {
+      refresh();
+      setInterval(refresh, 30000);
+      window.addEventListener("storage", (e) => {
+        if (e.key === RESERVATIONS_KEY) refresh();
+      });
+    }
+
+    mount();
+  </script>
+</body>
+</html>

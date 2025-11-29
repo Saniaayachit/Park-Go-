@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! – Account Details</title>
+  <link rel="stylesheet" href="profile.css" />
+</head>
+<body>
+  <header class="topbar subpage-header">
+    <a href="profile.html" class="back-link" aria-label="Back to Profile">← Profile</a>
+    <div class="heading">
+      <div class="title">Account Details</div>
+      <div class="subtitle">Edit your personal contact information</div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="account-hub" aria-labelledby="accountHeading">
+      <div class="hub-header">
+        <h2 id="accountHeading">Your Contact Info</h2>
+        <p>Keep your personal details up to date so receipts, alerts, and concierge messages reach you quickly.</p>
+      </div>
+
+      <article class="hub-panel">
+        <div class="panel-card">
+          <h3>Profile Information</h3>
+          <form id="accountForm" class="account-form">
+            <div class="photo-field">
+              <div class="photo-frame" aria-live="polite">
+                <img id="acctPhotoPreview" class="photo-preview" alt="Profile photo preview" hidden>
+                <span id="acctPhotoPlaceholder" class="photo-placeholder" aria-hidden="true">PG</span>
+              </div>
+              <input id="acctPhoto" type="file" accept="image/*" hidden>
+              <div class="photo-actions">
+                <button type="button" class="btn secondary" id="uploadPhotoBtn">Upload photo</button>
+                <button type="button" class="btn ghost" id="removePhoto" disabled>Remove</button>
+              </div>
+              <p class="inline-note">PNG or JPG up to 2 MB.</p>
+            </div>
+
+            <div class="form-row two">
+              <label>
+                <span class="label-text">First Name</span>
+                <input id="acctFirstName" type="text" placeholder="Gaurav" required>
+              </label>
+              <label>
+                <span class="label-text">Last Name</span>
+                <input id="acctLastName" type="text" placeholder="Rai" required>
+              </label>
+            </div>
+
+            <div class="form-row two">
+              <label>
+                <span class="label-text">Email</span>
+                <input id="acctEmail" type="email" placeholder="you@example.com" required>
+              </label>
+              <label>
+                <span class="label-text">Phone</span>
+                <input id="acctPhone" type="tel" placeholder="(555) 123-4567">
+              </label>
+            </div>
+
+            <div class="form-row two">
+              <label>
+                <span class="label-text">Street Address</span>
+                <input id="acctStreet" type="text" placeholder="100 Morrissey Blvd">
+              </label>
+              <label>
+                <span class="label-text">Apt / Suite</span>
+                <input id="acctApt" type="text" placeholder="Unit 4B">
+              </label>
+            </div>
+
+            <div class="form-row three">
+              <label>
+                <span class="label-text">City</span>
+                <input id="acctCity" type="text" placeholder="Boston">
+              </label>
+              <label>
+                <span class="label-text">State</span>
+                <input id="acctState" type="text" placeholder="MA" maxlength="2">
+              </label>
+              <label>
+                <span class="label-text">ZIP Code</span>
+                <input id="acctZip" type="text" inputmode="numeric" pattern="\\d{5}" placeholder="02125">
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <button type="reset" class="btn ghost">Reset</button>
+              <button type="submit" class="btn primary">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <a href="home.html" class="tab">Home</a>
+    <a href="map.html" class="tab">Map</a>
+    <a href="reservations.html" class="tab">Reservations</a>
+    <a href="profile.html" class="tab active">Profile</a>
+  </nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="profile-shared.js"></script>
+  <script>
+  (() => {
+    const { SESSION_KEY, ensureProfile, readProfiles, writeProfiles, toTitleCase } = window.ProfileStore;
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const email = localStorage.getItem(SESSION_KEY) || "guest@example.com";
+
+    const form        = $("#accountForm");
+    const firstName   = $("#acctFirstName");
+    const lastName    = $("#acctLastName");
+    const acctEmail   = $("#acctEmail");
+    const phone       = $("#acctPhone");
+    const street      = $("#acctStreet");
+    const apt         = $("#acctApt");
+    const city        = $("#acctCity");
+    const state       = $("#acctState");
+    const zip         = $("#acctZip");
+    const photoInput  = $("#acctPhoto");
+    const uploadPhotoBtn = $("#uploadPhotoBtn");
+    const photoPreview = $("#acctPhotoPreview");
+    const photoPlaceholder = $("#acctPhotoPlaceholder");
+    const removePhotoBtn = $("#removePhoto");
+    const toast       = $("#toast");
+    const MAX_PHOTO_BYTES = 2 * 1024 * 1024; // 2MB ceiling
+
+    function showToast(message){
+      if(!toast){ return; }
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(()=>toast.classList.remove("show"),1600);
+    }
+
+    function deriveInitials(profile){
+      const source = (profile.name || profile.email || "").trim();
+      if(!source){
+        return "PG";
+      }
+      const parts = source.split(/\s+/).filter(Boolean);
+      if(parts.length){
+        return parts.slice(0,2).map(part=>part.charAt(0).toUpperCase()).join("");
+      }
+      const letters = source.replace(/[^A-Za-z]/g,"").slice(0,2);
+      return letters.toUpperCase() || "PG";
+    }
+
+    function renderPhoto(profile){
+      if(!photoPlaceholder || !removePhotoBtn){ return; }
+      const hasPhoto = !!(profile.photo && profile.photo.length);
+      if(photoPreview){
+        if(hasPhoto){
+          photoPreview.src = profile.photo;
+          photoPreview.hidden = false;
+        }else{
+          photoPreview.src = "";
+          photoPreview.hidden = true;
+        }
+      }
+      photoPlaceholder.textContent = deriveInitials(profile);
+      photoPlaceholder.hidden = hasPhoto;
+      photoPlaceholder.setAttribute("aria-hidden", String(hasPhoto));
+      removePhotoBtn.disabled = !hasPhoto;
+    }
+
+    function loadForm(){
+      const profiles = readProfiles();
+      const profile = profiles[email] || ensureProfile();
+      const nameParts = (profile.name || "").trim().split(/\s+/).filter(Boolean);
+      const primaryName = nameParts.shift() || "";
+      const secondaryName = nameParts.join(" ");
+      if(firstName){ firstName.value = toTitleCase(primaryName); }
+      if(lastName){ lastName.value = toTitleCase(secondaryName); }
+      if(acctEmail){ acctEmail.value = profile.email || email; }
+      if(phone){ phone.value = profile.phone || ""; }
+      if(street){ street.value = profile.address || ""; }
+      if(apt){ apt.value = profile.apt || ""; }
+      if(city){ city.value = profile.city || ""; }
+      if(state){ state.value = profile.state || ""; }
+      if(zip){ zip.value = profile.zip || ""; }
+      renderPhoto(profile);
+    }
+
+    if(form){
+      form.addEventListener("submit", (event)=>{
+        event.preventDefault();
+        const profiles = readProfiles();
+        const profile = profiles[email] || ensureProfile();
+        const fn = (firstName?.value || "").trim();
+        const ln = (lastName?.value || "").trim();
+        const formattedFirst = fn ? toTitleCase(fn) : "";
+        const formattedLast = ln ? toTitleCase(ln) : "";
+        profile.name = [formattedFirst, formattedLast].filter(Boolean).join(" ").trim() || profile.name || "";
+        profile.email = (acctEmail?.value || email).trim();
+        profile.phone = (phone?.value || "").trim();
+        profile.address = (street?.value || "").trim();
+        profile.apt = (apt?.value || "").trim();
+        profile.city = (city?.value || "").trim();
+        profile.state = (state?.value || "").trim().toUpperCase().slice(0,2);
+        profile.zip = (zip?.value || "").replace(/\D/g,"").slice(0,10);
+        profiles[email] = profile;
+        writeProfiles(profiles);
+        loadForm();
+        showToast("Account details updated");
+      });
+      form.addEventListener("reset", (event)=>{
+        event.preventDefault();
+        loadForm();
+        showToast("Reverted to saved details");
+      });
+    }
+
+    uploadPhotoBtn?.addEventListener("click", ()=>{
+      photoInput?.click();
+    });
+
+    photoInput?.addEventListener("change", ()=>{
+      const file = photoInput.files?.[0];
+      if(!file){ return; }
+      if(file.size > MAX_PHOTO_BYTES){
+        showToast("Photo must be smaller than 2 MB");
+        photoInput.value = "";
+        return;
+      }
+      if(file.type && !/^image\//i.test(file.type)){
+        showToast("Please choose an image file");
+        photoInput.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const result = typeof reader.result === "string" ? reader.result : "";
+        if(!result){
+          showToast("Could not load photo");
+          return;
+        }
+        const profiles = readProfiles();
+        const profile = profiles[email] || ensureProfile();
+        profile.photo = result;
+        profiles[email] = profile;
+        writeProfiles(profiles);
+        renderPhoto(profile);
+        showToast("Profile photo updated");
+      };
+      reader.readAsDataURL(file);
+    });
+
+    removePhotoBtn?.addEventListener("click", ()=>{
+      const profiles = readProfiles();
+      const profile = profiles[email] || ensureProfile();
+      if(!profile.photo){
+        showToast("No photo saved");
+        return;
+      }
+      profile.photo = "";
+      profiles[email] = profile;
+      writeProfiles(profiles);
+      renderPhoto(profile);
+      if(photoInput){
+        photoInput.value = "";
+      }
+      showToast("Profile photo removed");
+    });
+
+    state?.addEventListener("input", ()=>{
+      state.value = state.value.replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2);
+    });
+    zip?.addEventListener("input", ()=>{
+      zip.value = zip.value.replace(/\D/g,"").slice(0,10);
+    });
+
+    ensureProfile();
+    loadForm();
+  })();
+  </script>
+</body>
+</html>

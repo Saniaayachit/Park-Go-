@@ -1,0 +1,667 @@
+/* =========================================================
+   Parking Map Page – Full CSS (matches home.css bottom nav)
+   ========================================================= */
+
+/* ---- Theme Tokens ---- */
+:root{
+  --primary:#4f46e5;
+  --primary-600:#4338ca;
+  --accent:#7c3aed;
+  --panel:#ffffff;
+  --bg:#f8fafc;
+  --muted:#6b7280;
+  --ring:#c7d2fe;
+  --shadow:0 10px 28px rgba(0,0,0,.08);
+  --radius:14px;
+}
+
+/* ---- Resets / Basics ---- */
+*{ box-sizing:border-box; }
+html, body{ height:100%; }
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color:#111827;
+  background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 30%, #ffffff 100%);
+  min-height:100vh;
+  padding-bottom:200px; /* extra breathing room above fixed bottom nav */
+}
+
+/* Utilities */
+.muted{ color:var(--muted); }
+.small{ font-size:12px; }
+
+/* ---- Header / Topbar ---- */
+.topbar{
+  position: sticky; top:0; z-index:50;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:16px;
+  padding:16px 24px;
+  background:#fff;
+  box-shadow:0 2px 6px rgba(109,40,217,0.08);
+  border-bottom:1px solid #ede9fe;
+}
+.topbar .left{ display:flex; align-items:center; gap:16px; }
+.topbar .right{ display:flex; align-items:center; gap:12px; }
+.topbar .heading{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.topbar .heading .title{
+  font-weight:800;
+  font-size:20px;
+  color:#1f2937;
+}
+.topbar .heading .subtitle{
+  font-size:13px;
+  font-weight:500;
+  color:var(--muted);
+}
+
+/* Park&Go! image logo */
+.logo-link{
+  display:flex;
+  align-items:center;
+  text-decoration:none;
+}
+.logo-img{
+  height:40px;           /* matches home header */
+  width:auto;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.1);
+  transition:transform .2s ease, box-shadow .2s ease;
+}
+.logo-img:hover{
+  transform:scale(1.05);
+  box-shadow:0 4px 10px rgba(0,0,0,.15);
+}
+
+/* (legacy placeholder box, kept if used elsewhere) */
+.logo{ width:36px; height:36px; display:grid; place-items:center; }
+
+/* ---- Buttons ---- */
+.btn{
+  appearance:none; border:none; border-radius:10px; font-weight:700; cursor:pointer;
+  padding:10px 14px; font-size:14px;
+  transition: background .2s, transform .04s, box-shadow .2s;
+}
+.btn:active{ transform: translateY(1px); }
+.btn.primary{ background:var(--primary); color:#fff; }
+.btn.primary:hover{ background:var(--primary-600); }
+.btn.secondary{ background:#eef2ff; color:#312e81; }
+.btn.ghost{ background:#fff; color:var(--primary); border:1px solid #e5e7eb; }
+.btn.secondary:hover, .btn.ghost:hover{ transform: translateY(-1px); }
+
+/* ---- Page Layout ---- */
+.container{
+  max-width:1000px;
+  margin:0 auto;
+  padding:32px 24px 160px;
+  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
+  min-height: calc(100vh - 150px); /* minus header + bottom nav */
+}
+.section{
+  background:var(--panel);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:28px;
+  margin-bottom:24px;
+}
+.section + .section{ margin-top:28px; }
+.section-title{ margin:0 0 12px 0; font-size:18px; font-weight:800; }
+.hint{ font-size:12px; color:var(--muted); margin-top:8px; }
+
+/* =========================================================
+   Map / Lot Styles
+   ========================================================= */
+
+/* Legend: pill with items */
+.legend{
+  display:flex; align-items:center; gap:16px;
+  background:#fff;
+  border:1px solid #e9ecf4;
+  border-radius:999px;
+  padding:10px 14px;
+  box-shadow:0 6px 16px rgba(17,24,39,.06);
+  width:max-content;
+  max-width:100%;
+  margin:8px auto 12px; /* centered under header */
+}
+.legend .item{
+  display:inline-flex; align-items:center; gap:8px;
+  font-weight:700; color:#111827; font-size:14px;
+}
+.legend .dot{
+  width:14px; height:14px; border-radius:4px; display:inline-block;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.9);
+}
+.legend .dot.available{ background:#16a34a; }
+.legend .dot.reserved{ background:#facc15; }
+.legend .dot.occupied{ background:#ef4444; }
+.legend .dot.selected{ background:#7c3aed; }
+
+/* Entrance marker */
+.legend .entrance{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  margin-left:20px;
+  padding-left:16px;
+  border-left:1px solid #eef2ff;
+  font-weight:800;
+  font-size:12px;
+  color:#374151;
+  letter-spacing:.2px;
+}
+.legend .entrance-icon{
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:#111827;
+  position:relative;
+  display:inline-block;
+}
+.legend .entrance-icon::after{
+  content:"";
+  position:absolute;
+  width:6px;
+  height:6px;
+  border-right:2px solid #fff;
+  border-bottom:2px solid #fff;
+  top:3px;
+  left:4px;
+  transform:rotate(45deg);
+}
+
+/* Lot card wrapper */
+.lot-wrap{
+  margin:8px auto 0;
+  background:#fff;
+  border-radius:24px;
+  padding:18px;
+  border:1px solid #eef2ff;
+  box-shadow:0 18px 40px rgba(15,23,42,.08);
+  max-width:900px;
+}
+.lot-header{
+  padding:2px 2px 16px 2px;
+  display:grid;
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  align-items:end;
+  gap:16px;
+}
+.garage-picker{ grid-column:1 / span 4; }
+.level-meta{
+  grid-column:5 / span 8;
+  display:flex;
+  align-items:flex-end;
+  justify-content:flex-end;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.garage-picker,
+.level-picker{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.garage-picker label,
+.level-picker label{
+  font-size:12px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.3px;
+  color:#4b5563;
+}
+.garage-picker select,
+.level-picker select{
+  appearance:none;
+  border:1px solid #e5e7eb;
+  border-radius:12px;
+  padding:10px 14px;
+  font-weight:700;
+  background:#ffffff;
+  box-shadow:0 10px 20px rgba(15,23,42,0.08);
+  color:#1f2937;
+  min-width:220px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:calc(100% - 14px) center;
+  padding-right:36px;
+}
+.garage-picker select:focus-visible,
+.level-picker select:focus-visible{
+  outline:none;
+  border-color:#818cf8;
+  box-shadow:0 0 0 3px rgba(129,140,248,0.35);
+}
+.level-picker select{
+  min-width:160px;
+}
+.level-helper{
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.2px;
+  text-transform:uppercase;
+}
+
+
+.lot{ position:relative; }
+
+.map-stage{
+  position:relative;
+  padding:18px;
+  border-radius:24px;
+  border:1px solid rgba(148,163,184,0.25);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(99,102,241,0.12) 0%, rgba(129,140,248,0.05) 35%, rgba(255,255,255,0) 65%),
+    linear-gradient(180deg,#f8fafc 0%, #eef2ff 100%);
+  box-shadow:0 22px 48px rgba(15,23,42,0.16);
+  overflow:hidden;
+}
+.map-stage::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:radial-gradient(circle at 80% 10%, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0) 55%);
+  mix-blend-mode:screen;
+}
+.map-grid{
+  display:grid;
+  grid-template-columns: repeat(28, minmax(14px, 1fr));
+  grid-template-rows: repeat(20, 32px);
+  gap:6px;
+  border-radius:18px;
+  border:1px solid rgba(148,163,184,0.35);
+  padding:16px;
+  position:relative;
+  min-height:560px;
+  background:
+    linear-gradient(#e2e8f0 1px, transparent 1px) 0 0 / 100% 32px,
+    linear-gradient(90deg,#e2e8f0 1px, transparent 1px) 0 0 / 32px 100%,
+    linear-gradient(135deg, rgba(236,233,254,0.7), rgba(226,232,240,0.9));
+  box-shadow:inset 0 8px 24px rgba(15,23,42,0.05);
+}
+.map-item{
+  grid-column: var(--col) / span var(--colspan, 1);
+  grid-row: var(--row) / span var(--rowspan, 1);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:12px;
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.25px;
+  color:#1f2937;
+  pointer-events:none;
+  padding:4px 6px;
+  background:rgba(255,255,255,0.9);
+  box-shadow:0 8px 18px rgba(15,23,42,0.08);
+}
+.map-item span{ pointer-events:none; }
+
+.drive-lane{
+  background:repeating-linear-gradient(90deg, #e2e8f0 0, #e2e8f0 12px, #cbd5f5 12px, #cbd5f5 20px);
+  color:#475569;
+}
+.drive-lane span{ opacity:.75; }
+.drive-lane.northern,
+.drive-lane.southern{
+  background:linear-gradient(90deg,#cbd5f5 0,#e2e8f0 100%);
+  justify-content:flex-start;
+  padding-left:12px;
+}
+.drive-lane.southern{
+  justify-content:flex-end;
+  padding-left:0;
+  padding-right:12px;
+}
+.drive-lane.central{
+  background:repeating-linear-gradient(0deg, #e2e8f0 0, #e2e8f0 16px, #cbd5f5 16px, #cbd5f5 28px);
+}
+
+.map-feature{
+  background:#e0e7ff;
+  border:1px solid #c7d2fe;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.5);
+}
+.map-feature.core{ background:#c7d2fe; color:#1e1b4b; }
+.map-feature.lobby{ background:#fef9c3; border-color:#fde68a; color:#92400e; }
+.map-feature.ev-hub{ background:#dcfce7; border-color:#bbf7d0; color:#166534; }
+.map-feature.security{ background:#fee2e2; border-color:#fecaca; color:#991b1b; }
+
+.parking-spot{
+  grid-column: var(--col) / span var(--colspan, 2);
+  grid-row: var(--row) / span var(--rowspan, 2);
+  border-radius:14px;
+  border:1px solid rgba(15,23,42,0.08);
+  background:#16a34a;
+  color:#fff;
+  font-weight:800;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:6px;
+  cursor:pointer;
+  position:relative;
+  transition: transform .18s ease, box-shadow .2s ease, background .2s ease, border-color .18s ease;
+  box-shadow:0 10px 22px rgba(15,23,42,0.12);
+  padding:8px 6px;
+  isolation:isolate;
+}
+.parking-spot::before{
+  content:"";
+  position:absolute;
+  inset:8px 8px auto 8px;
+  height:4px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.6);
+  opacity:0.65;
+  pointer-events:none;
+}
+.parking-spot .spot-code{
+  font-size:14px;
+  letter-spacing:.3px;
+  text-shadow:0 4px 10px rgba(15,23,42,0.35);
+}
+.parking-spot .spot-status{
+  background:none !important;
+  font-size:8px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.25px;
+  padding:0;
+  border-radius:0;
+  background:transparent;
+  color:#ffffff;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  box-shadow:none;
+}
+.parking-spot[aria-disabled="true"]{
+  cursor:not-allowed;
+  filter:saturate(.9);
+  opacity:.96;
+}
+.parking-spot:hover:not([aria-disabled="true"]){
+  transform:translateY(-2px);
+  box-shadow:0 16px 30px rgba(79,70,229,0.22);
+}
+.parking-spot:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px rgba(129,140,248,0.55), 0 14px 26px rgba(129,140,248,0.35);
+}
+.status-available{
+  background:linear-gradient(135deg,#22c55e 0%,#16a34a 50%,#0f9f6e 100%);
+  border-color:rgba(34,197,94,0.55);
+}
+.status-available .spot-status{
+  background:rgba(209,250,229,0.3);
+}
+.status-reserved{
+  background:linear-gradient(135deg,#fcd34d 0%,#fbbf24 45%,#f59e0b 100%);
+  color:#422006;
+  border-color:rgba(234,179,8,0.6);
+}
+.status-reserved .spot-code,
+
+.status-reserved .spot-status{
+  background:transparent;
+}
+.status-occupied{
+  background:linear-gradient(135deg,#f97316 0%,#ef4444 50%,#dc2626 100%);
+  border-color:rgba(239,68,68,0.6);
+}
+.status-occupied .spot-status{
+  background:transparent;
+}
+.status-selected{
+  box-shadow:0 0 0 3px rgba(124,58,237,0.45), 0 22px 38px rgba(124,58,237,0.35);
+  transform:translateY(-3px);
+  background:linear-gradient(135deg,#c4b5fd 0%,#7c3aed 100%);
+  color:#fff;
+  border-color:rgba(124,58,237,0.2);
+}
+ .status-selected .spot-status{
+  background:transparent;
+  color:#fff;
+}
+.status-selected .spot-code{
+  color:#fff;
+  text-shadow:0 4px 10px rgba(76,29,149,0.45);
+}
+.ev-spot::after{
+  content:"⚡";
+  position:absolute;
+  top:6px;
+  right:6px;
+  font-size:12px;
+  opacity:.85;
+}
+
+.entrance-marker{
+  position:absolute;
+  bottom:26px;
+  left:32px;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  background:#111827;
+  color:#fff;
+  font-weight:700;
+  padding:6px 14px;
+  border-radius:999px;
+  box-shadow:0 10px 26px rgba(15,23,42,.32);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+}
+.entrance-marker::before{
+  content:"";
+  width:10px;
+  height:10px;
+  border-right:2px solid #fff;
+  border-bottom:2px solid #fff;
+  transform:rotate(45deg);
+  margin-right:2px;
+}
+.entrance-marker span{ font-size:12px; }
+
+/* Controls / footer of card */
+.controls{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; padding:12px 6px 4px;
+}
+.selection{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+
+/* Pricing row */
+.pricing{ display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+.pricing label{ font-weight:700; display:block; margin-bottom:4px; font-size:12px; color:#374151; }
+.pricing .when input[type="time"],
+.pricing .dur select{
+  appearance:none;
+  border:1px solid #e5e7eb;
+  background:#fff;
+  padding:8px 10px;
+  border-radius:10px;
+  font-weight:700;
+  color:#111827;
+  min-width: 140px;
+}
+.total{ font-weight:800; }
+
+/* Modal basics */
+.modal{ padding:0; border:none; border-radius:12px; }
+.modal-card{
+  padding:24px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  width:min(90vw, 420px);
+}
+.modal::backdrop{ background: rgba(0,0,0,.3); }
+.modal .row{ display:flex; gap:10px; justify-content:flex-end; }
+.qr-modal .modal-card{
+  align-items:center;
+  text-align:center;
+}
+.qr-card #qrCode{
+  width:200px;
+  height:200px;
+  border:10px solid #f4f4f5;
+  border-radius:16px;
+  background:#fff;
+  image-rendering:pixelated;
+}
+.qr-card #qrCode canvas,
+.qr-card #qrCode img{
+  width:100%;
+  height:100%;
+}
+.qr-fallback{
+  font-weight:600;
+  color:#b91c1c;
+}
+.qr-card .confirm-details{
+  width:100%;
+  margin-top:8px;
+}
+.confirm-summary{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  color:#4b5563;
+}
+.confirm-lede{
+  margin:0;
+  font-weight:600;
+  color:#111827;
+}
+.confirm-details{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:grid;
+  gap:8px;
+}
+.confirm-details li{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:14px;
+}
+.confirm-details li span{
+  color:#6b7280;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.3px;
+}
+.confirm-details li strong{
+  color:#111827;
+}
+.confirm-details li strong.amount{
+  color:#5b21b6;
+}
+.confirm-error{
+  margin-top:12px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:#fef2f2;
+  color:#b91c1c;
+  font-weight:600;
+  border:1px solid #fecaca;
+}
+
+/* =========================================================
+   Bottom Navigation – identical feel to home.css
+   ========================================================= */
+
+/* Container */
+.tabbar{
+  position: fixed;
+  bottom:0; left:0; right:0;
+  z-index:100;
+  background: var(--panel);
+  border-top:1px solid #e5e7eb;
+  display:flex; justify-content:space-around; align-items:center;
+  padding:10px 0;
+  box-shadow:0 -2px 10px rgba(0,0,0,.06);
+  height:68px; /* same size as home.css */
+}
+
+/* Items (no dot element) */
+.tabbar .tab{
+  text-decoration:none;
+  color: var(--muted);
+  font-weight:600;
+  font-size:14px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  transition: color .2s, transform .2s, background .3s;
+  padding:6px 10px;
+  border-radius:12px;
+}
+
+/* If any .dot slipped in, hide it */
+.tabbar .dot{ display:none !important; }
+
+/* Hover + Active styles */
+.tabbar .tab:hover{
+  color: var(--primary);
+  background:#f3e8ff;
+  transform: translateY(-2px);
+}
+.tabbar .tab.active{
+  color: var(--primary);
+  background:#eef2ff;
+  box-shadow: inset 0 0 0 1.5px var(--primary);
+}
+
+/* Focus for a11y */
+.tabbar .tab:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px var(--ring);
+}
+
+@media (max-width:720px){
+  .legend{
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .lot-wrap{
+    padding:14px;
+    border-radius:20px;
+  }
+  .lot-header{
+    grid-template-columns:1fr;
+  }
+  .garage-picker,
+  .level-meta{
+    grid-column:1 / span 1;
+    width:100%;
+  }
+  .map-stage{
+    padding:12px;
+    border-radius:18px;
+  }
+  .map-grid{
+    grid-template-rows: repeat(16, 26px);
+    padding:8px;
+    gap:4px;
+    min-height:340px;
+  }
+  .parking-spot{
+    gap:1px;
+  }
+  .parking-spot .spot-code{ font-size:12px; }
+   .parking-spot .spot-status{
+  background:none !important; font-size:7px; }
+  .entrance-marker{
+    bottom:18px;
+    left:20px;
+    padding:5px 12px;
+  }
+}

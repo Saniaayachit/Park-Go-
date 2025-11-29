@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! - Home</title>
+
+  <!-- ✅ Linked CSS file -->
+  <link rel="stylesheet" href="home.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="left">
+      <a href="home.html" class="logo-link">
+        <img src="Park&Go!.png" alt="Park&Go! Logo" class="logo-img" />
+      </a>
+      <div class="heading">
+        <div class="title" id="welcomeText">Welcome back!</div>
+        <div class="subtitle" id="welcomeSub">Let’s get you parked.</div>
+      </div>
+    </div>
+    <div class="right">
+      <button id="signOutBtn" class="btn ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero-card">
+      <div class="hero-left">
+        <div class="hero-heading">
+          <span class="pill">Today’s Plan</span>
+          <h1 id="heroGreeting">Good morning, driver</h1>
+        </div>
+        <p id="nextReservation" class="hero-copy">You don’t have any active reservations. Pick a garage to get started.</p>
+        <div class="hero-actions">
+          <button id="primaryAction" class="btn primary">Reserve a Spot</button>
+          <button id="viewHistory" class="btn ghost">View Reservations</button>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="metric-card">
+          <div class="metric-label">Selected Garage</div>
+          <div class="metric-value" id="selectedGarageLabel">None</div>
+          <div class="metric-sub" id="garageStatus">Choose a garage below</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section select-garage">
+      <div class="section-heading">
+        <h2 class="section-title">Live garage availability</h2>
+        <p class="muted small">Data refreshes every five minutes from gate sensors.</p>
+      </div>
+      <div class="garages" id="garageList"></div>
+      <div class="hint">Tip: Selecting a garage personalises the insights and reservation shortcuts below.</div>
+    </section>
+
+
+    <section class="section activity">
+      <div class="section-heading">
+        <h2 class="section-title">Upcoming & recent reservations</h2>
+        <button id="viewAllReservations" class="link-btn">View all</button>
+      </div>
+      <ul id="reservationList" class="reservation-list" aria-live="polite"></ul>
+      <div id="reservationEmpty" class="empty-state">No reservations yet. Reserve a spot to see it here.</div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="sitenavigation">
+    <p><a href="home.html" class="active">Home</a></p>
+    <p><a href="Map.html"> Map</a></p>
+    <p><a href="./reservations.html">Reservation</a></p>
+    <p><a href="./profile.html">Profile</a></p>
+  </nav>
+  <script src="profile-shared.js"></script>
+  <script>
+  (() => {
+    const {
+      SESSION_KEY,
+      readProfiles,
+      writeProfiles,
+      ensureProfile,
+      readReservations,
+      formatDate,
+      toTitleCase,
+      localPart
+    } = window.ProfileStore;
+
+    const SELECTED_GARAGE_KEY = "parkgo_selected_garage";
+    const MODE_KEY = "parkgo_mode";
+    const GARAGE_SNAPSHOT_KEY = "parkgo_garage_snapshot";
+
+    const email = localStorage.getItem(SESSION_KEY);
+    if(!email){
+      window.location.href = "welcome.html";
+      return;
+    }
+
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const welcomeText    = $("#welcomeText");
+    const welcomeSub     = $("#welcomeSub");
+    const heroGreeting   = $("#heroGreeting");
+    const nextReservationEl = $("#nextReservation");
+    const primaryAction  = $("#primaryAction");
+    const viewHistory    = $("#viewHistory");
+    const selectedGarageLabel = $("#selectedGarageLabel");
+    const garageStatus   = $("#garageStatus");
+    const garageList     = $("#garageList");
+    const reservationList = $("#reservationList");
+    const reservationEmpty = $("#reservationEmpty");
+
+    function deriveFirstName(profile){
+      const raw = (profile.name || "").trim();
+      if(raw){
+        return toTitleCase(raw.split(/\s+/)[0] || "Driver");
+      }
+      const fragment = email.split("@")[0] || "";
+      const match = fragment.match(/[A-Za-z]+/);
+      const token = match ? match[0] : "Driver";
+      return toTitleCase(token);
+    }
+
+    function ensureProfileName(){
+      const profiles = readProfiles();
+      const profile = profiles[email] || ensureProfile();
+      if(!profile.name){
+        try{
+          const users = JSON.parse(localStorage.getItem("parkgo_users") || "{}");
+          const user = users[email];
+          if(user){
+            const candidate = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+            if(candidate){
+              profile.name = candidate.split(/\s+/).map(part=>toTitleCase(part)).join(" ");
+            }
+          }
+        }catch{}
+      }
+      profiles[email] = profile;
+      writeProfiles(profiles);
+      return profile;
+    }
+
+    const profile = ensureProfileName();
+    const firstName = deriveFirstName(profile);
+
+    if(welcomeText){ welcomeText.textContent = `Welcome back, ${firstName}!`; }
+    if(heroGreeting){ heroGreeting.textContent = `Hi ${firstName}, your spot is waiting`; }
+    if(welcomeSub){
+      welcomeSub.textContent = "Track availability, reserve parking, and stay ahead with live updates.";
+    }
+
+    function loadStoredSnapshot(){
+      try{
+        return JSON.parse(localStorage.getItem(GARAGE_SNAPSHOT_KEY) || "null");
+      }catch{
+        return null;
+      }
+    }
+    function normalizeSnapshot(raw){
+      if(!raw){ return null; }
+      const map = new Map();
+      const list = Array.isArray(raw.garages) ? raw.garages : [];
+      list.forEach(item=>{
+        if(item && item.name){
+          map.set(item.name, item);
+        }
+      });
+      if(!map.size){ return null; }
+      return { timestamp: raw.timestamp || Date.now(), map };
+    }
+
+    // Garage data
+    function computeGarageSnapshot(){
+      const now = Date.now();
+      const base = [
+        { name:"West Garage", levels:7, capacity:420, base:0.62 },
+        { name:"Campus Center Garage", levels:2, capacity:120, base:0.45 }
+      ];
+      const cached = normalizeSnapshot(loadStoredSnapshot());
+      if(cached && (now - cached.timestamp) < 5 * 60 * 1000){
+        const reused = base.map(entry=>{
+          const cachedEntry = cached.map.get(entry.name);
+          if(cachedEntry){
+            const available = Math.min(Number(cachedEntry.available) || 0, entry.capacity);
+            const ratio = Math.min(Math.max(cachedEntry.ratio ?? (available / entry.capacity), 0), 1);
+            const change = cachedEntry.change ?? 0;
+            return { ...entry, available, change, ratio };
+          }
+          return { ...entry, available: Math.round(entry.capacity * entry.base), change: 0, ratio: entry.base };
+        });
+        try{
+          localStorage.setItem(GARAGE_SNAPSHOT_KEY, JSON.stringify({ timestamp: cached.timestamp, garages: reused }));
+        }catch{}
+        return reused;
+      }
+      const result = base.map((entry, index)=>{
+        const wave = Math.sin(now / (620000 - index * 110000)) * 0.08;
+        const ratio = Math.min(Math.max(entry.base + wave, 0.1), 0.95);
+        const available = Math.round(entry.capacity * ratio);
+        const change = Math.round((Math.random() * 12) - 6);
+        return { ...entry, available, change, ratio };
+      });
+      try{
+        localStorage.setItem(GARAGE_SNAPSHOT_KEY, JSON.stringify({ timestamp: now, garages: result }));
+      }catch{}
+      return result;
+    }
+
+    let garages = computeGarageSnapshot();
+
+    function renderGarageCards(){
+      if(!garageList){ return; }
+      const saved = localStorage.getItem(SELECTED_GARAGE_KEY);
+      const STATE_DATA = {
+        good:{
+          label:"Flowing freely",
+          caption:"Plenty of stalls open",
+          color:"#7c3aed",
+          glow:"rgba(124,58,237,0.35)",
+          surface:"linear-gradient(135deg,#ede9fe 0%,#ddd6fe 45%,#c4b5fd 100%)",
+          muted:"#4c1d95"
+        },
+        moderate:{
+          label:"Filling steadily",
+          caption:"Arrivals picking up",
+          color:"#7c3aed",
+          glow:"rgba(124,58,237,0.35)",
+          surface:"linear-gradient(135deg,#ede9fe 0%,#ddd6fe 45%,#c4b5fd 100%)",
+          muted:"#4c1d95"
+        },
+        busy:{
+          label:"Near capacity",
+          caption:"Expect short waits",
+          color:"#7c3aed",
+          glow:"rgba(124,58,237,0.35)",
+          surface:"linear-gradient(135deg,#ede9fe 0%,#ddd6fe 45%,#c4b5fd 100%)",
+          muted:"#4c1d95"
+        }
+      };
+      garageList.innerHTML = garages.map((garage)=>{
+        const percent = Math.round((garage.available/garage.capacity)*100);
+        const state = percent >= 70 ? "good" : percent >= 40 ? "moderate" : "busy";
+        const tone = STATE_DATA[state] || STATE_DATA.moderate;
+        const change = garage.change || 0;
+        const trendText = `${change >= 0 ? "+" : ""}${change} vs last hour`;
+        const trendClass = change >= 0 ? "positive" : "negative";
+        const selected = saved === garage.name ? "selected" : "";
+        const trendIcon = change >= 0 ? "▲" : "▼";
+        return `
+          <button
+            class="garage-card ${selected}"
+            data-garage="${garage.name}"
+            data-state="${state}"
+            style="--state-color:${tone.color}; --state-glow:${tone.glow}; --state-surface:${tone.surface}; --state-muted:${tone.muted}; --percent:${percent}%;">
+            <div class="garage-header">
+              <div class="g-heading">
+                <span class="status-led" aria-hidden="true"></span>
+                <div>
+                  <div class="g-title">${garage.name}</div>
+                  <div class="g-meta">${garage.levels} level${garage.levels>1?"s":""}</div>
+                </div>
+              </div>
+              <div class="garage-pill">${percent}% capacity</div>
+            </div>
+            <div class="garage-meter" aria-hidden="true">
+              <div class="meter-track">
+                <div class="meter-fill" style="width:${percent}%"></div>
+              </div>
+              <div class="meter-legend">
+                <span class="meter-available">${garage.available} open</span>
+                <span class="meter-used">${garage.capacity - garage.available} used</span>
+              </div>
+            </div>
+            <div class="garage-state">
+              <span class="state-label">${tone.label}</span>
+              <span class="state-caption">${tone.caption}</span>
+            </div>
+            <div class="garage-trend ${trendClass}">
+              <span class="trend-icon" aria-hidden="true">${trendIcon}</span>
+              <span>${trendText}</span>
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      const buttons = Array.from(document.querySelectorAll(".garage-card"));
+      buttons.forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          buttons.forEach(b=>b.classList.remove("selected"));
+          btn.classList.add("selected");
+          const garageName = btn.dataset.garage;
+          localStorage.setItem(SELECTED_GARAGE_KEY, garageName);
+          updateGarageSummary(garageName);
+        });
+        btn.addEventListener("keydown",(e)=>{
+          if(e.key === "Enter" || e.key === " "){
+            e.preventDefault();
+            btn.click();
+          }
+        });
+      });
+
+      if(!saved && buttons.length){
+        buttons[0].classList.add("selected");
+        localStorage.setItem(SELECTED_GARAGE_KEY, buttons[0].dataset.garage);
+      }
+      updateGarageSummary(localStorage.getItem(SELECTED_GARAGE_KEY) || garages[0].name);
+    }
+
+    function updateGarageSummary(name){
+      const entry = garages.find(g=>g.name === name);
+      if(selectedGarageLabel){
+        selectedGarageLabel.textContent = entry ? entry.name : "None";
+      }
+      if(garageStatus){
+        if(entry){
+          const percent = Math.round((entry.available/entry.capacity)*100);
+          garageStatus.textContent = `${entry.available} spots open • ${percent}% capacity`;
+        }else{
+          garageStatus.textContent = "Choose a garage to personalize suggestions.";
+        }
+      }
+    }
+
+    function getReservations(){
+      const list = readReservations();
+      return list.filter(r=>r.user === email);
+    }
+
+    function renderReservations(){
+      if(!reservationList || !reservationEmpty){ return; }
+      const list = getReservations();
+      if(!list.length){
+        reservationList.innerHTML = "";
+        reservationList.hidden = true;
+        reservationEmpty.hidden = false;
+        return;
+      }
+      const sorted = list.slice().sort((a,b)=>new Date(a.startIso) - new Date(b.startIso));
+      const now = Date.now();
+      const next = sorted.find(res => new Date(res.endIso).getTime() >= now);
+
+      if(nextReservationEl){
+        if(next){
+          const start = new Date(next.startIso);
+          const end = new Date(next.endIso);
+          nextReservationEl.innerHTML = `Your next reservation is <strong>${next.garage}</strong> on <strong>${start.toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"})}</strong> from <strong>${start.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}</strong> to <strong>${end.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}</strong>.`;
+        }else{
+          nextReservationEl.textContent = "You don’t have anything booked. Reserve a spot to skip the ticket line.";
+        }
+      }
+
+      reservationList.hidden = false;
+      reservationEmpty.hidden = true;
+      reservationList.innerHTML = sorted.slice(0,4).map((res)=>{
+        const start = new Date(res.startIso);
+        const end = new Date(res.endIso);
+        const isFuture = end.getTime() > now;
+        return `
+          <li class="reservation-item ${isFuture?"active":"completed"}">
+            <div>
+              <div class="reservation-title">${res.garage}</div>
+              <div class="reservation-meta">${start.toLocaleDateString([], {month:"short", day:"numeric"})} • ${start.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})} - ${end.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}</div>
+            </div>
+            <span class="status-badge">${isFuture ? "Upcoming" : "Completed"}</span>
+          </li>
+        `;
+      }).join("");
+    }
+
+    function goToMap(mode){
+      const selected =
+        document.querySelector(".garage-card.selected")?.dataset.garage ||
+        localStorage.getItem(SELECTED_GARAGE_KEY);
+
+      if(mode === "select" && !selected){
+        alert("Please choose a garage first.");
+        return;
+      }
+      if(selected){
+        localStorage.setItem(SELECTED_GARAGE_KEY, selected);
+      }
+      localStorage.setItem(MODE_KEY, mode);
+      window.location.href = "map.html";
+    }
+
+    $("#signOutBtn")?.addEventListener("click", ()=>{
+      localStorage.removeItem(SESSION_KEY);
+      window.location.href = "welcome.html";
+    });
+
+    primaryAction?.addEventListener("click", ()=>goToMap("select"));
+    viewHistory?.addEventListener("click", ()=>window.location.href = "reservations.html");
+    $("#viewAllReservations")?.addEventListener("click", ()=>window.location.href = "reservations.html");
+    window.addEventListener("storage", (event)=>{
+      if(event.key === GARAGE_SNAPSHOT_KEY){
+        const stored = normalizeSnapshot(loadStoredSnapshot());
+        if(stored){
+          garages = Array.from(stored.map.values()).map(entry=>({
+            name: entry.name,
+            levels: entry.levels || (entry.name === "West Garage" ? 7 : 2),
+            capacity: entry.capacity,
+            available: entry.available,
+            change: entry.change ?? 0,
+            ratio: entry.ratio ?? (entry.available / entry.capacity)
+          }));
+          renderGarageCards();
+        }
+      }
+    });
+
+    renderGarageCards();
+    renderReservations();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! – Vehicles</title>
+  <link rel="stylesheet" href="profile.css" />
+</head>
+<body>
+  <header class="topbar subpage-header">
+    <a href="profile.html" class="back-link" aria-label="Back to Profile">← Profile</a>
+    <div class="heading">
+      <div class="title">Vehicles</div>
+      <div class="subtitle">Manage license plates and garage access</div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="account-hub" aria-labelledby="vehiclesHeading">
+      <div class="hub-header">
+        <h2 id="vehiclesHeading">Garage Access</h2>
+        <p>Keep your plates current so Park&amp;Go! knows which vehicles to welcome.</p>
+      </div>
+
+      <div class="panel-grid">
+        <div class="panel-card">
+          <h3>Registered Vehicles</h3>
+          <p>We use these vehicles to trigger hands-free entry and exit.</p>
+          <ul id="vehicleList" class="vehicle-list" aria-live="polite"></ul>
+          <button id="addVehicleToggle" class="btn secondary full" type="button">Add Vehicle</button>
+          <form id="vehicleForm" class="slideover-form" hidden>
+            <div class="form-grid">
+              <label>
+                <span class="label-text">Vehicle Name</span>
+                <input id="vehicleNickname" type="text" placeholder="2021 Toyota RAV4" required>
+              </label>
+              <label>
+                <span class="label-text">License Plate</span>
+                <input id="vehiclePlate" type="text" placeholder="UMB742" maxlength="10" required>
+              </label>
+              <label>
+                <span class="label-text">Color</span>
+                <input id="vehicleColor" type="text" placeholder="Blue" required>
+              </label>
+              <label>
+                <span class="label-text">Notes</span>
+                <input id="vehicleNotes" type="text" placeholder="Primary commuter">
+              </label>
+            </div>
+            <label class="checkbox-line">
+              <input id="vehiclePrimary" type="checkbox">
+              <span>Make this my primary vehicle</span>
+            </label>
+            <div class="form-actions">
+              <button type="button" id="cancelVehicle" class="btn ghost">Cancel</button>
+              <button type="submit" class="btn primary">Save Vehicle</button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <a href="home.html" class="tab">Home</a>
+    <a href="map.html" class="tab">Map</a>
+    <a href="reservations.html" class="tab">Reservations</a>
+    <a href="profile.html" class="tab active">Profile</a>
+  </nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="profile-shared.js"></script>
+  <script>
+  (() => {
+    const { SESSION_KEY, ensureProfile, getVehicles, accessVehicles, createId } = window.ProfileStore;
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const email = localStorage.getItem(SESSION_KEY) || "guest@example.com";
+
+    const vehicleList      = $("#vehicleList");
+    const addVehicleToggle = $("#addVehicleToggle");
+    const vehicleForm      = $("#vehicleForm");
+    const vehicleNickname  = $("#vehicleNickname");
+    const vehiclePlate     = $("#vehiclePlate");
+    const vehicleColor     = $("#vehicleColor");
+    const vehicleNotes     = $("#vehicleNotes");
+    const vehiclePrimary   = $("#vehiclePrimary");
+    const cancelVehicle    = $("#cancelVehicle");
+    const toast            = $("#toast");
+
+    function showToast(message){
+      if(!toast){ return; }
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(()=>toast.classList.remove("show"),1600);
+    }
+
+    function toVehiclePlate(value){
+      return (value || "").replace(/\s+/g,"").toUpperCase();
+    }
+
+    function renderVehicles(){
+      const data = getVehicles();
+      const vehicles = data.vehicles || [];
+      if(!vehicleList){ return; }
+      if(!vehicles.length){
+        vehicleList.innerHTML = `<li class="empty-state">No vehicles on file yet. Add one to activate hands-free entry.</li>`;
+      }else{
+        vehicleList.innerHTML = vehicles.map((vehicle)=>{
+          const primaryBadge = vehicle.primary ? `<span class="pill mini primary-tag">Primary</span>` : "";
+          return `
+            <li class="vehicle-item" data-id="${vehicle.id}">
+              <div class="vehicle-marker" style="--vehicle-color:${vehicle.color || "#4f46e5"}"></div>
+              <div class="vehicle-copy">
+                <div class="vehicle-title">${vehicle.nickname || "Vehicle"} ${primaryBadge}</div>
+                <div class="vehicle-meta">Plate ${vehicle.plate} &middot; ${vehicle.color || "Unknown color"}</div>
+                ${vehicle.notes ? `<div class="vehicle-notes">${vehicle.notes}</div>` : ""}
+              </div>
+              <div class="vehicle-actions">
+                ${vehicle.primary ? "" : `<button class="link-btn" data-action="make-primary" type="button">Set primary</button>`}
+                <button class="link-btn danger" data-action="remove" type="button">Remove</button>
+              </div>
+            </li>
+          `;
+        }).join("");
+      }
+    }
+
+    if(addVehicleToggle && vehicleForm){
+      addVehicleToggle.addEventListener("click", ()=>{
+        vehicleForm.hidden = false;
+        addVehicleToggle.hidden = true;
+        vehicleNickname?.focus();
+      });
+    }
+
+    if(cancelVehicle && vehicleForm && addVehicleToggle){
+      cancelVehicle.addEventListener("click", ()=>{
+        vehicleForm.reset();
+        vehicleForm.hidden = true;
+        addVehicleToggle.hidden = false;
+      });
+    }
+
+    if(vehicleForm){
+      vehicleForm.addEventListener("submit", (event)=>{
+        event.preventDefault();
+        const nickname = (vehicleNickname?.value || "").trim();
+        const plate = toVehiclePlate(vehiclePlate?.value || "");
+        const color = (vehicleColor?.value || "").trim();
+        const notes = (vehicleNotes?.value || "").trim();
+        const makePrimary = !!vehiclePrimary?.checked;
+        if(!plate){
+          showToast("Enter a license plate");
+          return;
+        }
+        let saved = false;
+        accessVehicles((record)=>{
+          record.vehicles = record.vehicles || [];
+          const exists = record.vehicles.some(v=>v.plate === plate);
+          if(exists){ return; }
+          const newVehicle = {
+            id:createId("veh"),
+            nickname,
+            plate,
+            color,
+            notes,
+            primary:false,
+            created:new Date().toISOString()
+          };
+          if(makePrimary){
+            record.vehicles.forEach(v=>{ v.primary=false; });
+            newVehicle.primary = true;
+          }else if(!record.vehicles.some(v=>v.primary)){
+            newVehicle.primary = true;
+          }
+          record.vehicles.push(newVehicle);
+          saved = true;
+        });
+        if(saved){
+          vehicleForm.reset();
+          vehicleForm.hidden = true;
+          if(addVehicleToggle){ addVehicleToggle.hidden = false; }
+          renderVehicles();
+          showToast("Vehicle added");
+        }else{
+          showToast("That plate is already saved");
+        }
+      });
+    }
+
+    if(vehiclePlate){
+      vehiclePlate.addEventListener("input", ()=>{
+        vehiclePlate.value = toVehiclePlate(vehiclePlate.value);
+      });
+    }
+
+    if(vehicleList){
+      vehicleList.addEventListener("click", (event)=>{
+        const btn = event.target.closest("button[data-action]");
+        if(!btn){ return; }
+        const action = btn.dataset.action;
+        const item = btn.closest(".vehicle-item");
+        if(!item){ return; }
+        const vehicleId = item.dataset.id;
+        if(action === "make-primary"){
+          accessVehicles((record)=>{
+            record.vehicles = record.vehicles || [];
+            record.vehicles.forEach(v=>{ v.primary = v.id === vehicleId; });
+          });
+          renderVehicles();
+          showToast("Primary vehicle updated");
+        }
+        if(action === "remove"){
+          let removed = false;
+          accessVehicles((record)=>{
+            const vehicles = record.vehicles || [];
+            if(vehicles.length <= 1){ return; }
+            const target = vehicles.find(v=>v.id === vehicleId);
+            if(!target){ return; }
+            record.vehicles = vehicles.filter(v=>v.id !== vehicleId);
+            if(target.primary && record.vehicles.length){
+              record.vehicles[0].primary = true;
+            }
+            removed = true;
+          });
+          if(removed){
+            renderVehicles();
+            showToast("Vehicle removed");
+          }else{
+            showToast("Keep at least one vehicle on file");
+          }
+        }
+      });
+    }
+
+    ensureProfile();
+    renderVehicles();
+  })();
+  </script>
+</body>
+</html>

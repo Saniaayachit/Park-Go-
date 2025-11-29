@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! – Payment</title>
+  <link rel="stylesheet" href="profile.css" />
+</head>
+<body>
+  <header class="topbar subpage-header">
+    <a href="profile.html" class="back-link" aria-label="Back to Profile">← Profile</a>
+    <div class="heading">
+      <div class="title">Payment</div>
+      <div class="subtitle">Autopay, wallet, and receipts</div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="account-hub" aria-labelledby="paymentHeading">
+      <div class="hub-header">
+        <h2 id="paymentHeading">Manage Payment Methods</h2>
+        <p>Keep your payment details current so Park&amp;Go! can charge the right card every time.</p>
+      </div>
+
+      <div class="panel-grid">
+        <div class="panel-card highlight payment-status-card">
+          <h3>Autopay &amp; Billing</h3>
+          <p id="autopayMessage">Autopay handles your charges in the background so you can focus on the drive.</p>
+          <div class="autopay-toggle">
+            <label class="switch">
+              <input id="autopaySwitch" type="checkbox">
+              <span class="slider"></span>
+            </label>
+            <div class="autopay-details">
+              <div class="status-label">Autopay is <span id="autopayState">enabled</span></div>
+            </div>
+          </div>
+          <div class="panel-meta">
+            <span id="autopayBadge" class="pill">Autopay Enabled</span>
+          </div>
+        </div>
+
+        <div class="panel-card payment-methods-card">
+          <h3>Wallet</h3>
+          <p>Manage how Park&amp;Go! bills you after each visit.</p>
+          <ul id="paymentMethodsList" class="method-list" aria-live="polite"></ul>
+          <button id="addMethodToggle" class="btn secondary full" type="button">Add Payment Method</button>
+          <form id="paymentMethodForm" class="slideover-form" hidden>
+            <div class="form-grid">
+              <label class="full-span">
+                <span class="label-text">Cardholder's Full Name</span>
+                <input id="methodHolder" type="text" placeholder="Taylor Garcia" required>
+              </label>
+              <div class="form-row duo">
+                <label>
+                  <span class="label-text">16-digit card number</span>
+                  <input id="methodNumber" type="text" inputmode="numeric" pattern="\d{16}" maxlength="16" placeholder="1234123412341234" required>
+                </label>
+                <label>
+                  <span class="label-text">Card type</span>
+                  <select id="methodType" required>
+                    <option value="">Select</option>
+                    <option value="visa">Visa</option>
+                    <option value="mastercard">Mastercard</option>
+                    <option value="amex">Amex</option>
+                    <option value="discover">Discover</option>
+                    <option value="paypal">PayPal</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row duo">
+                <label>
+                  <span class="label-text">Expiration month</span>
+                  <select id="methodExpMonth" required>
+                    <option value="">Select month</option>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                  </select>
+                </label>
+                <label>
+                  <span class="label-text">Expiration year</span>
+                  <input id="methodExpYear" type="number" min="2024" max="2034" placeholder="YYYY" required>
+                </label>
+              </div>
+              <label class="full-span">
+                <span class="label-text">Nickname</span>
+                <input id="methodNickname" type="text" placeholder="Campus Visa" required>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="cancelMethod" class="btn ghost">Cancel</button>
+              <button type="submit" class="btn primary">Save Method</button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <a href="home.html" class="tab">Home</a>
+    <a href="map.html" class="tab">Map</a>
+    <a href="reservations.html" class="tab">Reservations</a>
+    <a href="profile.html" class="tab active">Profile</a>
+  </nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="profile-shared.js"></script>
+  <script>
+  (() => {
+    const { SESSION_KEY, ensureProfile, getPayment, accessPayment, createId, formatCurrency, timeAgo } = window.ProfileStore;
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const email = localStorage.getItem(SESSION_KEY) || "guest@example.com";
+
+    const autopaySwitch  = $("#autopaySwitch");
+    const autopayState   = $("#autopayState");
+    const autopayBadge   = $("#autopayBadge");
+    const autopayMessage = $("#autopayMessage");
+    const paymentMethodsList = $("#paymentMethodsList");
+    const addMethodToggle    = $("#addMethodToggle");
+    const paymentMethodForm  = $("#paymentMethodForm");
+    const methodHolder       = $("#methodHolder");
+    const methodNumber       = $("#methodNumber");
+    const methodNickname     = $("#methodNickname");
+    const methodType         = $("#methodType");
+    const methodExpMonth     = $("#methodExpMonth");
+    const methodExpYear      = $("#methodExpYear");
+    const cancelMethod       = $("#cancelMethod");
+    const toast              = $("#toast");
+
+    function showToast(message){
+      if(!toast){ return; }
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(()=>toast.classList.remove("show"),1600);
+    }
+
+    function paymentTypeLabel(type){
+      const map = {
+        visa:"Visa",
+        mastercard:"Mastercard",
+        amex:"American Express",
+        discover:"Discover",
+        paypal:"PayPal",
+        credits:"UMB Credits"
+      };
+      return map[type] || type;
+    }
+
+    function renderPayment(){
+      const record = getPayment();
+      if(autopaySwitch){ autopaySwitch.checked = !!record.autopay; }
+      if(autopayState){ autopayState.textContent = record.autopay ? "enabled" : "paused"; }
+      if(autopayBadge){
+        autopayBadge.textContent = record.autopay ? "Autopay Enabled" : "Autopay Paused";
+        autopayBadge.classList.toggle("warning", !record.autopay);
+      }
+      if(autopayMessage){
+        autopayMessage.textContent = record.autopay
+          ? "Autopay handles your charges in the background so you can focus on the drive."
+          : "Autopay is paused. We will prompt for payment at the gate until you turn it back on.";
+      }
+      renderPaymentMethods(record);
+    }
+
+    function renderPaymentMethods(record){
+      if(!paymentMethodsList){ return; }
+      const methods = (record?.methods || []).slice();
+      const primaryId = methods.find(m=>m.primary)?.id;
+      if(!methods.length){
+        paymentMethodsList.innerHTML = `<li class="empty-state">Add a payment method to keep breezing through the gate.</li>`;
+        return;
+      }
+      paymentMethodsList.innerHTML = methods.map((method)=>{
+        const isPrimary = method.id === primaryId;
+        const typeLabel = paymentTypeLabel(method.type);
+        const holderInfo = method.holder ? `${method.holder} • ` : "";
+        const meta = method.type === "credits"
+          ? `${formatCurrency(method.balanceCents || 0)} balance`
+          : `${holderInfo}Ends in ${method.last4} · Expires ${String(method.expMonth).padStart(2,"0")}/${String(method.expYear).slice(-2)}`;
+        const badges = isPrimary ? `<span class="pill mini primary-tag">Primary</span>` : "";
+        return `
+          <li class="method-item" data-id="${method.id}">
+            <div class="method-info">
+              <div class="method-title">${method.nickname || typeLabel} ${badges}</div>
+              <div class="method-meta">${typeLabel} &middot; ${meta}</div>
+            </div>
+            <div class="method-actions">
+              ${isPrimary ? "" : `<button class="link-btn" data-action="set-primary" type="button">Make primary</button>`}
+              ${method.locked ? `<span class="inline-note">Managed</span>` : `<button class="link-btn danger" data-action="remove" type="button">Remove</button>`}
+            </div>
+          </li>
+        `;
+      }).join("");
+    }
+
+
+    if(autopaySwitch){
+      autopaySwitch.addEventListener("change", ()=>{
+        const enabled = !!autopaySwitch.checked;
+        accessPayment((record)=>{
+          record.autopay = enabled;
+          record.lastSync = Date.now();
+        });
+        renderPayment();
+        showToast(enabled ? "Autopay enabled" : "Autopay paused");
+      });
+    }
+
+    if(addMethodToggle && paymentMethodForm){
+      addMethodToggle.addEventListener("click", ()=>{
+        paymentMethodForm.hidden = false;
+        addMethodToggle.hidden = true;
+        methodNickname?.focus();
+      });
+    }
+    if(cancelMethod && paymentMethodForm && addMethodToggle){
+      cancelMethod.addEventListener("click", ()=>{
+        paymentMethodForm.reset();
+        paymentMethodForm.hidden = true;
+        addMethodToggle.hidden = false;
+      });
+    }
+    if(paymentMethodForm){
+      paymentMethodForm.addEventListener("submit", (event)=>{
+        event.preventDefault();
+        const holder = (methodHolder?.value || "").trim();
+        const cardNumber = (methodNumber?.value || "").replace(/\s+/g,"");
+        const nickname = (methodNickname?.value || "").trim();
+        const type = methodType?.value || "";
+        const expMonth = Number(methodExpMonth?.value || 0);
+        const expYear = Number(methodExpYear?.value || 0);
+        if(!holder){ showToast("Enter the cardholder's full name"); return; }
+        if(!/^\d{16}$/.test(cardNumber)){ showToast("Enter a valid 16-digit card number"); return; }
+        if(!type){ showToast("Choose a payment type"); return; }
+        if(!expMonth){ showToast("Select an expiration month"); return; }
+        const last4 = cardNumber.slice(-4);
+        let saved = false;
+        let duplicate = false;
+        accessPayment((record)=>{
+          record.methods = record.methods || [];
+          duplicate = record.methods.some(m=>m.last4 === last4 && m.type === type && (m.holder || "").toLowerCase() === holder.toLowerCase());
+          if(duplicate){ return; }
+          const newMethod = {
+            id:createId("pay"),
+            nickname,
+            holder,
+            type,
+            last4,
+            expMonth,
+            expYear,
+            primary:false
+          };
+          const hasPrimary = record.methods.some(m=>m.primary);
+          if(!hasPrimary){ newMethod.primary=true; }
+          record.methods.push(newMethod);
+          record.lastSync = Date.now();
+          saved = true;
+        });
+        if(duplicate){
+          showToast("That method already exists. Use a different nickname or card.");
+          return;
+        }
+        if(saved){
+          paymentMethodForm.reset();
+          paymentMethodForm.hidden = true;
+          if(addMethodToggle){ addMethodToggle.hidden = false; }
+          renderPayment();
+          showToast("Payment method saved");
+        }
+      });
+    }
+
+    if(paymentMethodsList){
+      paymentMethodsList.addEventListener("click", (event)=>{
+        const btn = event.target.closest("button[data-action]");
+        if(!btn){ return; }
+        const action = btn.dataset.action;
+        const item = btn.closest(".method-item");
+        if(!item){ return; }
+        const methodId = item.dataset.id;
+        if(action === "set-primary"){
+          accessPayment((record)=>{
+            record.methods = (record.methods || []).map((method)=>({
+              ...method,
+              primary: method.id === methodId
+            }));
+            record.lastSync = Date.now();
+          });
+          renderPayment();
+          showToast("Primary method updated");
+        }
+        if(action === "remove"){
+          let removed = false;
+          let blockedMessage = "";
+          accessPayment((record)=>{
+            const methods = record.methods || [];
+            const target = methods.find(m=>m.id === methodId);
+            if(!target){ return; }
+            if(target.locked){
+              blockedMessage = "Managed methods cannot be removed";
+              return;
+            }
+            if(methods.length <= 1){
+              blockedMessage = "Keep at least one payment method";
+              return;
+            }
+            record.methods = methods.filter(m=>m.id !== methodId);
+            if(target.primary && record.methods.length){
+              record.methods[0].primary = true;
+            }
+            record.lastSync = Date.now();
+            removed = true;
+          });
+          if(removed){
+            renderPayment();
+            showToast("Payment method removed");
+          }else if(blockedMessage){
+            showToast(blockedMessage);
+          }
+        }
+      });
+    }
+
+    ensureProfile();
+    renderPayment();
+  })();
+  </script>
+</body>
+</html>

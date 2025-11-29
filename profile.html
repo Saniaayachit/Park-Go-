@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! – Profile</title>
+  <link rel="stylesheet" href="profile.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="topbar">
+    <div class="left">
+      <a href="home.html" class="logo-link" title="Go Home">
+        <!-- Replaced basic SVG with image logo -->
+        <img src="Park&Go!.png" alt="Park&Go! logo" class="logo-img" />
+      </a>
+      <div class="heading">
+        <div class="title">Profile</div>
+        <div class="subtitle">Your account & vehicle</div>
+      </div>
+    </div>
+    <div class="right">
+      <button id="editBtn" class="btn secondary">Edit Profile</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="app-badge" aria-hidden="true">
+        <div class="badge-inner">
+          <!-- Replaced simple SVG with image logo badge -->
+          <img src="Park&Go!.png" alt="" class="badge-logo" />
+        </div>
+      </div>
+
+      <div class="avatar-block">
+        <div class="avatar" id="profileAvatar" aria-hidden="true" data-has-photo="false">
+          <img id="profileAvatarImg" class="avatar-photo" alt="Profile photo" hidden>
+          <span id="profileAvatarInitials" class="avatar-initials">PG</span>
+        </div>
+      </div>
+
+      <h1 class="welcome">Welcome back, <span id="welcomeName">—</span>!</h1>
+      <div class="badge-row">
+        <span class="role-chip" id="profileRole">UMB Community</span>
+      </div>
+    </section>
+
+    <!-- ACCOUNT HUB -->
+    <section class="account-hub" aria-labelledby="hubHeading">
+      <div class="hub-header">
+        <h2 id="hubHeading">Account Hub</h2>
+        <p>Choose an area to manage your Park&amp;Go! experience.</p>
+      </div>
+
+      <nav class="profile-menu" aria-label="Profile sections">
+        <a class="menu-item" href="profile-payment.html">
+          <div>
+            <div class="menu-title">Payment</div>
+            <div class="menu-desc">Autopay, wallet, and billing insights</div>
+          </div>
+          <span aria-hidden="true" class="menu-arrow">→</span>
+        </a>
+        <a class="menu-item" href="profile-vehicles.html">
+          <div>
+            <div class="menu-title">Vehicles</div>
+            <div class="menu-desc">Plates, permits, and maintenance reminders</div>
+          </div>
+          <span aria-hidden="true" class="menu-arrow">→</span>
+        </a>
+        <a class="menu-item" href="profile-about.html">
+          <div>
+            <div class="menu-title">About</div>
+            <div class="menu-desc">The Park&amp;Go! story and campus milestones</div>
+          </div>
+          <span aria-hidden="true" class="menu-arrow">→</span>
+        </a>
+        <a class="menu-item" href="profile-account.html">
+          <div>
+            <div class="menu-title">Account</div>
+            <div class="menu-desc">Update contact info, phone, and address details</div>
+          </div>
+          <span aria-hidden="true" class="menu-arrow">→</span>
+        </a>
+        <a class="menu-item" href="profile-contact.html">
+          <div>
+            <div class="menu-title">Contact</div>
+            <div class="menu-desc">Support, feedback sessions, and mailing info</div>
+          </div>
+          <span aria-hidden="true" class="menu-arrow">→</span>
+        </a>
+      </nav>
+    </section>
+
+    <!-- EDIT SHEET -->
+    <section id="editSheet" class="edit-sheet" hidden>
+      <h3>Edit Profile</h3>
+      <form id="editForm" class="edit-form" autocomplete="on">
+        <div class="field">
+          <label for="fullName">Full Name</label>
+          <input id="fullName" type="text" placeholder="First Last" required>
+        </div>
+        <div class="field">
+          <label for="plate">License Plate</label>
+          <input id="plate" type="text" maxlength="10" placeholder="ABC-1234">
+          <div class="hint small">Saved in UPPERCASE automatically</div>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="cancelEdit" class="btn ghost">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="tabbar">
+    <a href="home.html" class="tab">Home</a>
+    <a href="map.html" class="tab">Map</a>
+    <a href="reservations.html" class="tab">Reservations</a>
+    <a href="profile.html" class="tab active">Profile</a>
+  </nav>
+
+  <!-- Toast -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="profile-shared.js"></script>
+  <script>
+  (() => {
+    const { SESSION_KEY, ensureProfile, readProfiles, writeProfiles, readUsers, localPart, toTitleCase } = window.ProfileStore;
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const email = localStorage.getItem(SESSION_KEY) || "guest@example.com";
+
+    const welcomeName = $("#welcomeName");
+    const profileRole = $("#profileRole");
+    const editBtn     = $("#editBtn");
+    const editSheet   = $("#editSheet");
+    const editForm    = $("#editForm");
+    const inputName   = $("#fullName");
+    const inputPlate  = $("#plate");
+    const cancelEdit  = $("#cancelEdit");
+    const toast       = $("#toast");
+    const avatarRoot  = $("#profileAvatar");
+    const avatarImg   = $("#profileAvatarImg");
+    const avatarInitials = $("#profileAvatarInitials");
+
+    function showToast(message){
+      if(!toast){ return; }
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(()=>toast.classList.remove("show"),1600);
+    }
+
+    function deriveFirstName(profile){
+      const raw = (profile.name || "").trim();
+      if(raw){
+        const firstToken = /\s/.test(raw) ? raw.split(/\s+/)[0] : raw;
+        const cleaned = firstToken.replace(/[^A-Za-z]/g, "");
+        if(cleaned){
+          return toTitleCase(cleaned);
+        }
+      }
+      const fragment = localPart(email);
+      const match = fragment.match(/[A-Za-z]+/);
+      const token = match ? match[0] : "Driver";
+      return toTitleCase(token);
+    }
+
+    const roleLabels = {
+      student:"UMB Student",
+      faculty:"UMB Faculty",
+      staff:"UMB Staff"
+    };
+
+    function deriveInitials(profile){
+      const source = (profile.name || profile.email || "").trim();
+      if(!source){ return "PG"; }
+      const parts = source.split(/\s+/).filter(Boolean);
+      if(parts.length){
+        return parts.slice(0,2).map(part => part.charAt(0).toUpperCase()).join("");
+      }
+      const letters = source.replace(/[^A-Za-z]/g,"").slice(0,2);
+      return letters.toUpperCase() || "PG";
+    }
+
+    function formatRole(value){
+      if(!value){ return "UMB Community"; }
+      const raw = value.toString().trim();
+      const key = raw.toLowerCase();
+      if(roleLabels[key]){ return roleLabels[key]; }
+      if(/^umb\s/i.test(raw)){ return raw; }
+      return `UMB ${raw}`.trim();
+    }
+
+    function renderAvatar(profile){
+      if(!avatarRoot){ return; }
+      const hasPhoto = !!(profile.photo && profile.photo.length);
+      avatarRoot.dataset.hasPhoto = hasPhoto ? "true" : "false";
+      if(avatarImg){
+        if(hasPhoto){
+          avatarImg.src = profile.photo;
+          avatarImg.hidden = false;
+        }else{
+          avatarImg.src = "";
+          avatarImg.hidden = true;
+        }
+      }
+      if(avatarInitials){
+        avatarInitials.textContent = deriveInitials(profile);
+        avatarInitials.hidden = hasPhoto;
+      }
+    }
+
+    function renderProfile(){
+      const profile = ensureProfile();
+      if(welcomeName){ welcomeName.textContent = deriveFirstName(profile); }
+      const users = readUsers();
+      const account = users[email] || {};
+      const preferredRole = (account.role || profile.role || "").trim();
+      if(profileRole){
+        profileRole.textContent = formatRole(preferredRole);
+      }
+      if(account.role && profile.role !== account.role){
+        const profiles = readProfiles();
+        profile.role = account.role;
+        profiles[email] = profile;
+        writeProfiles(profiles);
+      }
+      renderAvatar(profile);
+    }
+
+    function openEdit(){
+      const profile = ensureProfile();
+      if(editSheet){ editSheet.hidden = false; }
+      if(inputName){
+        inputName.value = profile.name || "";
+        inputName.focus();
+      }
+      if(inputPlate){
+        inputPlate.value = profile.plate || "";
+      }
+    }
+
+    if(editBtn){ editBtn.addEventListener("click", openEdit); }
+    if(cancelEdit){ cancelEdit.addEventListener("click", ()=>{ if(editSheet){ editSheet.hidden = true; } }); }
+    if(inputPlate){
+      inputPlate.addEventListener("input", ()=>{
+        inputPlate.value = (inputPlate.value || "").toUpperCase();
+      });
+    }
+    if(editForm){
+      editForm.addEventListener("submit", (event)=>{
+        event.preventDefault();
+        const profiles = readProfiles();
+        const profile = profiles[email] || ensureProfile();
+        profile.name = (inputName?.value || profile.name || "").trim();
+        profile.email = profile.email || email;
+        profile.plate = (inputPlate?.value || "").toUpperCase();
+        profiles[email] = profile;
+        writeProfiles(profiles);
+        renderProfile();
+        if(editSheet){ editSheet.hidden = true; }
+        showToast("Profile updated");
+      });
+    }
+
+    renderProfile();
+
+    if(location.hash.toLowerCase() === "#edit"){
+      openEdit();
+    }
+
+    window.addEventListener("storage", (event)=>{
+      if(event.key === window.ProfileStore?.PROFILES_KEY){
+        renderProfile();
+      }
+    });
+  })();
+  </script>
+</body>
+</html>

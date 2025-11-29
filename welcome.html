@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en" class="app">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Park&Go! – Welcome</title>
+  <link rel="stylesheet" href="welcome.css" />
+</head>
+<body>
+  <div class="shell">
+    <!-- Left: marketing/hero -->
+    <section class="hero">
+      <div class="capsule" aria-hidden="true"></div>
+      <div class="header">
+        <div class="brand">Park&Go!</div>
+        <span class="pill">UMB Access</span>
+      </div>
+      <h2 style="margin:0">Welcome to faster campus parking</h2>
+      <div class="tag">Sign in with your <strong>@umb.edu</strong> email to manage reservations.</div>
+      <ul class="checklist" aria-label="Highlights">
+        <li>Reserve a spot in seconds</li>
+        <li>Extend sessions from your phone</li>
+        <li>Receipts & history in one place</li>
+      </ul>
+      <div class="sep"></div>
+      <div class="muted hint">This page is standalone and uses local storage for demo auth (no server required).</div>
+    </section>
+
+    <!-- Right: auth card -->
+    <section class="card" id="authCard" aria-live="polite">
+      <!-- Login view -->
+      <div id="loginView">
+        <h1>Sign in</h1>
+        <p>Use your <strong>@umb.edu</strong> email.</p>
+
+        <form id="loginForm" novalidate>
+          <label for="loginEmail">UMB Email</label>
+          <input id="loginEmail" name="email" type="email" inputmode="email" autocomplete="username" placeholder="john.doe@umb.edu" required />
+          <div class="hint">Must end with <strong>@umb.edu</strong>.</div>
+
+          <label for="loginPassword">Password</label>
+          <div class="input-with-toggle">
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+            <button type="button" id="toggleLoginPassword" class="peek-btn" aria-pressed="false">See your password</button>
+          </div>
+
+          <div id="loginError" class="err"></div>
+          <div id="loginOk" class="ok"></div>
+
+          <button type="button" class="inline-link" id="forgotPwBtn">Forgot password?</button>
+
+          <div class="row" style="margin-top:16px">
+            <button class="btn" type="submit">Sign in</button>
+            <button class="btn secondary" type="button" id="goCreateBtn">Create account</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Create account view -->
+      <div id="createView" class="hide">
+        <h1>Create account</h1>
+        <p>New here? Make an account with your <strong>@umb.edu</strong> email.</p>
+
+        <form id="createForm" novalidate>
+          <label for="createFirstName">First name</label>
+          <input id="createFirstName" name="firstName" type="text" autocomplete="given-name" placeholder="First name" required />
+
+          <label for="createLastName">Last name</label>
+          <input id="createLastName" name="lastName" type="text" autocomplete="family-name" placeholder="Last name" required />
+
+          <label for="createPhoto">Upload profile photo</label>
+          <input id="createPhoto" name="photo" type="file" accept="image/*" required />
+          <div class="hint">Add a clear headshot (JPG or PNG) to personalize your account.</div>
+
+          <label for="createEmail">UMB Email</label>
+          <input id="createEmail" name="email" type="email" inputmode="email" autocomplete="username" placeholder="john.doe@umb.edu" required />
+          <div class="hint">Only <strong>@umb.edu</strong> emails are allowed.</div>
+
+          <label for="createPassword">Password</label>
+          <input id="createPassword" name="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required />
+          <div class="checklist" id="pwChecklist">
+            <div id="pwLen">• At least 8 characters</div>
+            <div id="pwLetter">• Contains a letter</div>
+            <div id="pwNum">• Contains a number</div>
+          </div>
+
+          <label for="createPassword2">Confirm Password</label>
+          <input id="createPassword2" name="password2" type="password" autocomplete="new-password" placeholder="Re-enter password" required />
+
+          <label for="createRole">I am a...</label>
+          <select id="createRole" name="role" required>
+            <option value="student">UMB Student</option>
+            <option value="faculty">UMB Faculty</option>
+            <option value="staff">UMB Staff</option>
+          </select>
+
+
+          <div id="createError" class="err"></div>
+          <div id="createOk" class="ok"></div>
+
+          <div class="row" style="margin-top:16px">
+            <button class="btn" type="submit">Create account</button>
+            <button class="btn secondary" type="button" id="goLoginBtn">Back to sign in</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Forgot password view -->
+      <div id="resetView" class="hide">
+        <h1>Reset password</h1>
+        <p>Enter your <strong>@umb.edu</strong> email and we’ll send reset instructions.</p>
+
+        <form id="resetForm" novalidate>
+          <label for="resetEmail">UMB Email</label>
+          <input id="resetEmail" name="resetEmail" type="email" inputmode="email" autocomplete="username" placeholder="john.doe@umb.edu" required />
+          <div class="hint">For demo purposes we’ll simulate the reset flow.</div>
+
+          <div id="resetError" class="err"></div>
+          <div id="resetOk" class="ok"></div>
+
+          <div class="row" style="margin-top:16px">
+            <button class="btn" type="submit">Send reset link</button>
+            <button class="btn secondary" type="button" id="resetBackBtn">Back to sign in</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script src="profile-shared.js"></script>
+  <script>
+    // ===== Demo auth using localStorage (no backend) =====
+    const USERS_KEY = "parkgo_users";
+    const SESSION_KEY = "parkgo_current_user";
+    const umbRegex = /^[a-z0-9._%+-]+@umb\.edu$/i;
+
+    const loadUsers = () => {
+      try { return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; }
+      catch { return {}; }
+    };
+    const saveUsers = (users) => localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    const setSession = (email) => localStorage.setItem(SESSION_KEY, email);
+
+    const loginView = document.getElementById('loginView');
+    const createView = document.getElementById('createView');
+    const resetView = document.getElementById('resetView');
+    const goCreateBtn = document.getElementById('goCreateBtn');
+    const goLoginBtn = document.getElementById('goLoginBtn');
+    const forgotPwBtn = document.getElementById('forgotPwBtn');
+    const resetBackBtn = document.getElementById('resetBackBtn');
+
+    const clearAlerts = (scope) => {
+      scope.querySelectorAll('.err,.ok').forEach(el => { el.style.display = 'none'; el.textContent=''; });
+    };
+
+    function showCreate(){
+      [createView, loginView, resetView].forEach(v => v && clearAlerts(v));
+      loginView.classList.add('hide');
+      resetView.classList.add('hide');
+      createView.classList.remove('hide');
+      document.getElementById('createEmail').focus();
+    }
+    function showLogin(){
+      [createView, loginView, resetView].forEach(v => v && clearAlerts(v));
+      createView.classList.add('hide');
+      resetView?.classList.add('hide');
+      loginView.classList.remove('hide');
+      document.getElementById('loginEmail').focus();
+    }
+    function showReset(){
+      [createView, loginView, resetView].forEach(v => v && clearAlerts(v));
+      loginView.classList.add('hide');
+      createView.classList.add('hide');
+      resetView.classList.remove('hide');
+      document.getElementById('resetEmail').focus();
+    }
+
+    goCreateBtn.addEventListener('click', showCreate);
+    goLoginBtn?.addEventListener('click', showLogin);
+    forgotPwBtn?.addEventListener('click', showReset);
+    resetBackBtn?.addEventListener('click', showLogin);
+
+    // Create account
+    const createForm = document.getElementById('createForm');
+    const createFirstName = document.getElementById('createFirstName');
+    const createLastName = document.getElementById('createLastName');
+    const createRole = document.getElementById('createRole');
+    const createEmail = document.getElementById('createEmail');
+    const createPassword = document.getElementById('createPassword');
+    const createPassword2 = document.getElementById('createPassword2');
+    const createPhoto = document.getElementById('createPhoto');
+    const createError = document.getElementById('createError');
+    const createOk = document.getElementById('createOk');
+
+    const pwLen = document.getElementById('pwLen');
+    const pwLetter = document.getElementById('pwLetter');
+    const pwNum = document.getElementById('pwNum');
+
+    const validatePassword = (pw) => ({
+      len: pw.length >= 8,
+      letter: /[A-Za-z]/.test(pw),
+      num: /\d/.test(pw),
+    });
+
+    const updatePwChecklist = (pw) => {
+      const v = validatePassword(pw);
+      pwLen.classList.toggle('good', v.len);
+      pwLetter.classList.toggle('good', v.letter);
+      pwNum.classList.toggle('good', v.num);
+    };
+
+    createPassword.addEventListener('input', e => updatePwChecklist(e.target.value));
+
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    createForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      clearAlerts(createView);
+
+      const first = (createFirstName.value || "").trim();
+      const last = (createLastName.value || "").trim();
+      const formatter = window.ProfileStore ? window.ProfileStore.toTitleCase : (v=>v);
+      const normalizedFirst = formatter(first);
+      const normalizedLast = formatter(last);
+      const roleValue = createRole.value;
+      const email = createEmail.value.trim();
+      const pw = createPassword.value;
+      const pw2 = createPassword2.value;
+      const photoFile = createPhoto.files?.[0];
+
+      if(!first || !last){
+        createError.textContent = "Please enter your first and last name.";
+        createError.style.display = 'block';
+        return;
+      }
+      if(!roleValue){
+        createError.textContent = "Select your campus affiliation.";
+        createError.style.display = 'block';
+        return;
+      }
+      if(!umbRegex.test(email)){
+        createError.textContent = "Only UMB emails are allowed (must end with @umb.edu).";
+        createError.style.display = 'block';
+        return;
+      }
+      const rules = validatePassword(pw);
+      if(!(rules.len && rules.letter && rules.num)){
+        createError.textContent = "Password must be at least 8 characters and include a letter and a number.";
+        createError.style.display = 'block';
+        return;
+      }
+      if(pw !== pw2){
+        createError.textContent = "Passwords do not match.";
+        createError.style.display = 'block';
+        return;
+      }
+      if(!photoFile){
+        createError.textContent = "Please upload a profile photo.";
+        createError.style.display = 'block';
+        return;
+      }
+
+      let photoData = "";
+      try{
+        photoData = await readFileAsDataUrl(photoFile);
+      }catch{
+        createError.textContent = "We couldn't read that photo. Please try another image.";
+        createError.style.display = 'block';
+        return;
+      }
+
+      const users = loadUsers();
+      if(users[email]){
+        createError.textContent = "An account already exists for this email. Please sign in.";
+        createError.style.display = 'block';
+        return;
+      }
+      users[email] = {
+        password: pw,
+        createdAt: Date.now(),
+        firstName: normalizedFirst,
+        lastName: normalizedLast,
+        role: roleValue,
+        photo: photoData
+      };
+      saveUsers(users);
+
+      if(window.ProfileStore){
+        const profiles = window.ProfileStore.readProfiles();
+        const existing = profiles[email] || {};
+        profiles[email] = {
+          ...existing,
+          name: `${normalizedFirst} ${normalizedLast}`.trim(),
+          email,
+          plate: existing.plate || "",
+          phone: existing.phone || "",
+          address: existing.address || "",
+          city: existing.city || "",
+          state: existing.state || "",
+          zip: existing.zip || "",
+          emergency: existing.emergency || "",
+          role: roleValue,
+          photo: photoData
+        };
+        window.ProfileStore.writeProfiles(profiles);
+      }
+
+      createOk.textContent = "Account created! You can sign in now.";
+      createOk.style.display = 'block';
+
+      setTimeout(()=>{
+        showLogin();
+        document.getElementById('loginEmail').value = email;
+      }, 900);
+    });
+
+    // Login
+    const loginForm = document.getElementById('loginForm');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginError = document.getElementById('loginError');
+    const loginOk = document.getElementById('loginOk');
+    const toggleLoginPassword = document.getElementById('toggleLoginPassword');
+
+    toggleLoginPassword?.addEventListener('click', ()=>{
+      if(!loginPassword){ return; }
+      const revealing = loginPassword.type === "password";
+      loginPassword.type = revealing ? "text" : "password";
+      toggleLoginPassword.textContent = revealing ? "Hide password" : "See your password";
+      toggleLoginPassword.setAttribute("aria-pressed", String(revealing));
+      loginPassword.focus();
+    });
+
+    loginForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      clearAlerts(loginView);
+
+      const email = loginEmail.value.trim();
+      const pw = loginPassword.value;
+
+      if(!umbRegex.test(email)){
+        loginError.textContent = "Access restricted. Use your @umb.edu email.";
+        loginError.style.display = 'block';
+        return;
+      }
+      const users = loadUsers();
+      if(!users[email]){
+        loginError.textContent = "No account found for this email. Please create an account.";
+        loginError.style.display = 'block';
+        return;
+      }
+      if(users[email].password !== pw){
+        loginError.textContent = "Invalid password. Please try again.";
+        loginError.style.display = 'block';
+        return;
+      }
+
+      if(window.ProfileStore){
+        const profiles = window.ProfileStore.readProfiles();
+        const userProfile = profiles[email] || {};
+        const firstValue = users[email].firstName || userProfile.name?.split(/\s+/)[0] || "";
+        const lastValue = users[email].lastName || userProfile.name?.split(/\s+/).slice(1).join(" ") || "";
+        const formatter = window.ProfileStore.toTitleCase;
+        const first = firstValue ? formatter(firstValue) : "";
+        const last = lastValue ? formatter(lastValue) : "";
+        const roleValue = users[email].role || userProfile.role;
+        profiles[email] = {
+          ...userProfile,
+          name: `${first || ""} ${last || ""}`.trim() || userProfile.name || "",
+          email,
+          plate: userProfile.plate || "",
+          phone: userProfile.phone || "",
+          address: userProfile.address || "",
+          city: userProfile.city || "",
+          state: userProfile.state || "",
+          zip: userProfile.zip || "",
+          emergency: userProfile.emergency || "",
+          role: roleValue || userProfile.role || "UMB Community"
+        };
+        window.ProfileStore.writeProfiles(profiles);
+      }
+
+      setSession(email);
+      loginOk.textContent = "Success! Signing you in…";
+      loginOk.style.display = 'block';
+
+      setTimeout(()=>{ window.location.href = "home.html"; }, 600);
+    });
+
+    // Reset password flow (simulated)
+    const resetForm = document.getElementById('resetForm');
+    const resetEmail = document.getElementById('resetEmail');
+    const resetError = document.getElementById('resetError');
+    const resetOk = document.getElementById('resetOk');
+
+    resetForm?.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      clearAlerts(resetView);
+      const email = resetEmail.value.trim();
+
+      if(!umbRegex.test(email)){
+        resetError.textContent = "Please enter a valid @umb.edu email.";
+        resetError.style.display = 'block';
+        return;
+      }
+      const users = loadUsers();
+      if(!users[email]){
+        resetError.textContent = "We couldn’t find an account with that email.";
+        resetError.style.display = 'block';
+        return;
+      }
+      resetOk.textContent = "Check your inbox—we’ve sent a reset link (demo).";
+      resetOk.style.display = 'block';
+    });
+
+    // Optional: auto-redirect if already signed in
+    (function(){
+      const current = localStorage.getItem(SESSION_KEY);
+      if(current && umbRegex.test(current)){
+        // window.location.href = "home.html";
+      }
+    })();
+  </script>
+</body>
+</html>

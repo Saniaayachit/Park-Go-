@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Park&Go! - Map</title>
+  <link rel="stylesheet" href="map.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="left">
+      <a href="home.html" class="logo-link" title="Go Home">
+        <img src="Park&Go!.png" alt="Park&Go! logo" class="logo-img" />
+      </a>
+      <div class="heading">
+        <div class="title" id="garageTitle">West Garage</div>
+        <div class="subtitle">Tap a green spot to reserve</div>
+      </div>
+    </div>
+    <div class="right">
+      <button id="nearestBtn" class="btn secondary">Find Nearest Spot</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Legend -->
+    <section class="legend">
+      <span class="item"><span class="dot available"></span>Available</span>
+      <span class="item"><span class="dot reserved"></span>Reserved</span>
+      <span class="item"><span class="dot occupied"></span>Occupied</span>
+      <span class="item"><span class="dot selected"></span>Selected</span>
+    </section>
+
+    <!-- Map -->
+    <section class="lot-wrap">
+      <div class="lot-header">
+        <div class="garage-picker">
+          <label for="garageSelect">Garage</label>
+          <select id="garageSelect">
+            <option value="West Garage">West Garage</option>
+            <option value="Campus Center Garage">Campus Center Garage</option>
+          </select>
+        </div>
+        <div class="level-meta">
+          <div class="level-picker">
+            <label for="levelSelect">Level</label>
+            <select id="levelSelect" aria-label="Choose level"></select>
+          </div>
+          <div id="levelText" class="muted level-helper">Level 1 • Rows A-F</div>
+        </div>
+        <div class="lot-actions"></div>
+      </div>
+
+      <div class="lot map-stage">
+        <div class="map-grid" id="mapGrid" aria-label="Garage parking map"></div>
+      </div>
+
+      <div class="controls">
+        <div class="selection">
+          <div id="selectedLabel" class="muted">No spot selected</div>
+
+          <!-- When + Duration + Total -->
+          <div class="pricing">
+            <div class="when">
+              <label for="startTime">Start</label>
+              <input id="startTime" type="time" step="900" />
+            </div>
+
+            <div class="dur">
+              <label for="duration">Duration</label>
+              <select id="duration">
+                <option value="1">1 hour</option>
+                <option value="2">2 hours</option>
+                <option value="3">3 hours</option>
+                <option value="day">Whole day</option>
+              </select>
+            </div>
+
+            <div class="total" id="totalPrice">$0.00</div>
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button id="payBtn" class="btn primary" disabled>Pay & Reserve</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Nav (matches home.css; no dot elements) -->
+  <nav class="tabbar">
+    <a href="home.html" class="tab">Home</a>
+    <a href="map.html" class="tab active">Map</a>
+    <a href="reservations.html" class="tab">Reservations</a>
+    <a href="profile.html" class="tab">Profile</a>
+  </nav>
+
+  <!-- Payment Modal -->
+  <dialog id="payDialog" class="modal">
+    <form method="dialog" class="modal-card">
+      <h3>Confirm Reservation</h3>
+      <p id="confirmText" class="muted"></p>
+      <div class="row">
+        <button value="cancel" class="btn ghost">Cancel</button>
+        <button id="confirmPayBtn" value="ok" class="btn primary">Pay Now</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="qrDialog" class="modal qr-modal">
+    <form method="dialog" class="modal-card qr-card">
+      <h3>Gate Access Pass</h3>
+      <div id="qrCode"></div>
+      <ul class="confirm-details" id="qrDetails"></ul>
+      <div class="row">
+        <button value="close" class="btn ghost">Close</button>
+        <button type="button" id="qrNavBtn" class="btn primary">View Reservations</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const SESSION_KEY = "parkgo_current_user";
+    const SELECTED_GARAGE_KEY = "parkgo_selected_garage";
+    const MODE_KEY = "parkgo_mode";
+    const RESERVATIONS_KEY = "parkgo_reservations";
+
+    const user = localStorage.getItem(SESSION_KEY) || "guest@example.com";
+    const GARAGE_SNAPSHOT_KEY = "parkgo_garage_snapshot";
+    const GARAGE_CONFIG = {
+      "West Garage": { levels:[1,2,3,4,5,6,7] },
+      "Campus Center Garage": { levels:[1,2] }
+    };
+    let currentGarage = localStorage.getItem(SELECTED_GARAGE_KEY);
+    if(!currentGarage || !GARAGE_CONFIG[currentGarage]){
+      currentGarage = "West Garage";
+      localStorage.setItem(SELECTED_GARAGE_KEY, currentGarage);
+    }
+    let currentLevels = GARAGE_CONFIG[currentGarage].levels.slice();
+    let currentLevel = currentLevels[0];
+
+    const PRICE_PER_HOUR = 5;
+    const PRICE_WHOLE_DAY = 25;
+
+    const CELL_W = 36;
+    const CELL_H = 36;
+    const ENTRANCE_GRID = { col: 5, row: 18 };
+    const ENTRANCE_PX = {
+      x: (ENTRANCE_GRID.col - 0.5) * CELL_W,
+      y: (ENTRANCE_GRID.row - 0.5) * CELL_H
+    };
+
+    const ROW_LABELS = ["A","B","C","D","E","F"];
+    const ROW_OFFSETS = { A:2, B:4, C:8, D:10, E:14, F:16 };
+    const SPOTS_PER_ROW = 10;
+    const SPOTS_PER_LEVEL = ROW_LABELS.length * SPOTS_PER_ROW;
+    let snapshotCache = null;
+    let baseLayout = new Map();
+    const COL_BASE = 5;
+    const COL_SPAN = 2;
+    const COL_STEP = 2;
+    const ROW_SPAN = 2;
+
+    const MAP_FEATURES = [
+      { class:"drive-lane northern", label:"Ramp Up", col:4, row:1, colspan:22, rowspan:1 },
+      { class:"drive-lane central", label:"Drive Lane", col:4, row:6, colspan:22, rowspan:2 },
+      { class:"drive-lane central", col:4, row:12, colspan:22, rowspan:2 },
+      { class:"drive-lane southern", label:"Ramp Down", col:4, row:18, colspan:22, rowspan:1 },
+      { class:"map-feature core", label:"Elevators", col:12, row:12, colspan:4, rowspan:2 },
+      { class:"map-feature security", label:"Security", col:19, row:12, colspan:4, rowspan:2 }
+    ];
+
+    const mapGrid = document.getElementById("mapGrid");
+    const garageTitle = document.getElementById("garageTitle");
+    const garageSelect = document.getElementById("garageSelect");
+    const levelText = document.getElementById("levelText");
+    const levelSelect = document.getElementById("levelSelect");
+    const selectedLabel = document.getElementById("selectedLabel");
+    const durationSel = document.getElementById("duration");
+    const startTimeInp = document.getElementById("startTime");
+    const totalPrice = document.getElementById("totalPrice");
+    const payBtn = document.getElementById("payBtn");
+    const nearestBtn = document.getElementById("nearestBtn");
+    const viewOnlyBtn = document.getElementById("viewOnlyBtn");
+    const payDialog = document.getElementById("payDialog");
+    const confirmText = document.getElementById("confirmText");
+    const confirmPayBtn = document.getElementById("confirmPayBtn");
+    const qrDialog = document.getElementById("qrDialog");
+    const qrCodeEl = document.getElementById("qrCode");
+    const qrDetails = document.getElementById("qrDetails");
+    const qrNavBtn = document.getElementById("qrNavBtn");
+
+    const spotCenters = new Map();
+    const spotElements = new Map();
+    const spotState = new Map();
+
+    let selectedSpot = null;
+
+    function readReservations(){
+      try{
+        return JSON.parse(localStorage.getItem(RESERVATIONS_KEY) || "[]");
+      }catch{
+        return [];
+      }
+    }
+    function saveReservations(list){
+      localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list));
+    }
+    function rolloverExpired(){
+      const now = Date.now();
+      const list = readReservations();
+      let changed = false;
+      for (const r of list){
+        if (r.status === "Active" && new Date(r.endIso).getTime() < now){
+          r.status = "Completed";
+          changed = true;
+        }
+      }
+      if (changed) saveReservations(list);
+    }
+
+    function loadStoredSnapshot(){
+      try{
+        return JSON.parse(localStorage.getItem(GARAGE_SNAPSHOT_KEY) || "null");
+      }catch{
+        return null;
+      }
+    }
+    function normalizeSnapshot(raw){
+      if(!raw){ return null; }
+      const map = new Map();
+      const list = Array.isArray(raw.garages) ? raw.garages : [];
+      list.forEach(item=>{
+        if(item && item.name){
+          map.set(item.name, item);
+        }
+      });
+      if(!map.size){ return null; }
+      return { timestamp: raw.timestamp || Date.now(), map };
+    }
+    function generateSnapshot(){
+      const now = Date.now();
+      const base = [
+        { name:"West Garage", capacity: SPOTS_PER_LEVEL * GARAGE_CONFIG["West Garage"].levels.length, base:0.62 },
+        { name:"Campus Center Garage", capacity: SPOTS_PER_LEVEL * GARAGE_CONFIG["Campus Center Garage"].levels.length, base:0.45 }
+      ];
+      const garages = base.map((entry, index)=>{
+        const wave = Math.sin(now / (620000 - index * 110000)) * 0.08;
+        const ratio = Math.min(Math.max(entry.base + wave, 0.1), 0.95);
+        const available = Math.round(entry.capacity * ratio);
+        const change = Math.round((Math.random() * 12) - 6);
+        return {
+          name: entry.name,
+          capacity: entry.capacity,
+          available,
+          change,
+          ratio,
+          levels: GARAGE_CONFIG[entry.name]?.levels.length || 1
+        };
+      });
+      const payload = { timestamp: now, garages };
+      try{
+        localStorage.setItem(GARAGE_SNAPSHOT_KEY, JSON.stringify(payload));
+      }catch{}
+      return payload;
+    }
+    function getSnapshot(){
+      if(snapshotCache){ return snapshotCache; }
+      const stored = normalizeSnapshot(loadStoredSnapshot());
+      if(stored){
+        snapshotCache = stored;
+        return snapshotCache;
+      }
+      snapshotCache = normalizeSnapshot(generateSnapshot());
+      return snapshotCache;
+    }
+    function getGarageSnapshot(name){
+      const snapshot = getSnapshot();
+      return snapshot?.map.get(name) || null;
+    }
+
+    function applyPlacement(node, { col, row, colspan = 1, rowspan = 1 }){
+      node.style.setProperty("--col", col);
+      node.style.setProperty("--row", row);
+      node.style.setProperty("--colspan", colspan);
+      node.style.setProperty("--rowspan", rowspan);
+    }
+    function shuffle(array){
+      for(let i = array.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+    function distributeAvailability(total, levelCount){
+      const counts = Array(levelCount).fill(0);
+      const perLevel = SPOTS_PER_LEVEL;
+      const maxTotal = levelCount * perLevel;
+      let remaining = Math.max(0, Math.min(total, maxTotal));
+      let idx = 0;
+      while(remaining > 0){
+        if(counts[idx] < perLevel){
+          counts[idx]++;
+          remaining--;
+        }
+        idx = (idx + 1) % levelCount;
+      }
+      return counts;
+    }
+    function buildStatusArray(availableCount){
+      const totalSpots = SPOTS_PER_LEVEL;
+      const capped = Math.max(0, Math.min(availableCount, totalSpots));
+      const statuses = [];
+      for(let i=0; i<capped; i++){ statuses.push("available"); }
+      let remaining = totalSpots - statuses.length;
+      if(remaining < 0){ remaining = 0; }
+      const reservedTarget = Math.min(remaining, Math.max(2, Math.round(remaining * 0.45)));
+      for(let i=0; i<reservedTarget; i++){ statuses.push("reserved"); }
+      remaining = totalSpots - statuses.length;
+      for(let i=0; i<remaining; i++){ statuses.push("occupied"); }
+      return shuffle(statuses);
+    }
+    function updateBaseLayout(){
+      const config = GARAGE_CONFIG[currentGarage];
+      const snapshot = getGarageSnapshot(currentGarage);
+      const totalAvailable = snapshot ? snapshot.available : Math.round(SPOTS_PER_LEVEL * config.levels.length * 0.5);
+      const counts = distributeAvailability(totalAvailable, config.levels.length);
+      baseLayout = new Map();
+      config.levels.forEach((levelNumber, index)=>{
+        baseLayout.set(levelNumber, buildStatusArray(counts[index]));
+      });
+    }
+    function getBaseStatus(level, element){
+      const statuses = baseLayout.get(level);
+      if(!statuses){ return "available"; }
+      const idx = Number(element.dataset.index || 0);
+      return statuses[idx] || "available";
+    }
+    function updateLevelText(){
+      if(levelText){
+        levelText.textContent = `Level ${currentLevel} • Rows A-F`;
+      }
+    }
+
+    function buildMapLayout(){
+      mapGrid.innerHTML = "";
+      spotElements.clear();
+      spotCenters.clear();
+
+      MAP_FEATURES.forEach(feature=>{
+        const node = document.createElement("div");
+        node.className = `map-item ${feature.class}`;
+        if(feature.label){
+          const label = document.createElement("span");
+          label.textContent = feature.label;
+          node.appendChild(label);
+        }
+        node.setAttribute("aria-hidden","true");
+        applyPlacement(node, feature);
+        mapGrid.appendChild(node);
+      });
+
+      ROW_LABELS.forEach(rowLabel=>{
+        const rowStart = ROW_OFFSETS[rowLabel];
+        for(let col=1; col<=SPOTS_PER_ROW; col++){
+          const colStart = COL_BASE + (col-1) * COL_STEP;
+          const spotId = `${col}${rowLabel}`;
+          const spot = document.createElement("button");
+          spot.type = "button";
+          spot.className = "parking-spot status-available";
+          spot.dataset.id = spotId;
+          const spotIndex = spotElements.size;
+          spot.dataset.index = String(spotIndex);
+          spot.setAttribute("aria-label", `Spot ${spotId}`);
+          applyPlacement(spot, { col: colStart, row: rowStart, colspan: COL_SPAN, rowspan: ROW_SPAN });
+          spot.innerHTML = `
+            <span class="spot-code">${spotId}</span>
+            <span class="spot-status" aria-hidden="true">Available</span>
+          `;
+          if((rowLabel === "A" || rowLabel === "B") && col >= SPOTS_PER_ROW - 1){
+            spot.classList.add("ev-spot");
+          }
+          spot.addEventListener("click", ()=>handleSpotClick(spotId));
+          mapGrid.appendChild(spot);
+          spotElements.set(spotId, spot);
+
+          const centerX = (colStart - 1 + COL_SPAN / 2) * CELL_W;
+          const centerY = (rowStart - 1 + ROW_SPAN / 2) * CELL_H;
+          spotCenters.set(spotId, { x: centerX, y: centerY });
+        }
+      });
+    }
+
+    function renderLevelOptions(){
+      if(!levelSelect){ return; }
+      levelSelect.innerHTML = "";
+      currentLevels.forEach(level=>{
+        const option = document.createElement("option");
+        option.value = String(level);
+        option.textContent = `Level ${level}`;
+        levelSelect.appendChild(option);
+      });
+      levelSelect.value = String(currentLevel);
+    }
+
+    function getSpotState(level, spotId, element){
+      const now = Date.now();
+      const reservations = readReservations();
+      let status = getBaseStatus(level, element);
+      let reservation = null;
+      for (const res of reservations){
+        if(res.garage !== currentGarage) continue;
+        const resLevel = res.level ?? level;
+        if(resLevel !== level) continue;
+        if(res.spot !== spotId) continue;
+        if(res.status === "Cancelled" || res.status === "Completed") continue;
+        const start = new Date(res.startIso).getTime();
+        const end = new Date(res.endIso).getTime();
+        if(now >= start && now <= end){
+          status = "occupied";
+          reservation = res;
+          break;
+        }
+        if(start > now && status !== "occupied"){
+          status = "reserved";
+          if(!reservation || start < new Date(reservation.startIso).getTime()){
+            reservation = res;
+          }
+        }
+      }
+      return { status, reservation };
+    }
+
+    function renderGrid(){
+      rolloverExpired();
+      if(!baseLayout.has(currentLevel)){
+        updateBaseLayout();
+      }
+      spotState.clear();
+      spotElements.forEach((element, id)=>{
+        const state = getSpotState(currentLevel, id, element);
+        spotState.set(id, state);
+
+        element.classList.remove("status-available","status-reserved","status-occupied");
+        element.classList.add(`status-${state.status}`);
+        element.setAttribute("data-status", state.status);
+        element.setAttribute("aria-disabled", state.status === "available" ? "false" : "true");
+
+        const statusText = state.status === "available" ? "Available" : state.status === "reserved" ? "Reserved" : "Occupied";
+        const statusNode = element.querySelector(".spot-status");
+        if(statusNode){ statusNode.textContent = statusText; }
+
+        const reservedByYou = state.reservation && state.reservation.user === user;
+        const endLabel = state.reservation ? new Date(state.reservation.endIso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }) : "";
+        const descriptor = reservedByYou ? `${statusText} (yours)` : statusText;
+        const detail = endLabel ? ` until ${endLabel}` : "";
+        element.title = `Spot ${id}: ${descriptor}${detail}`;
+
+        if(selectedSpot === id && state.status === "available"){
+          element.classList.add("status-selected");
+        }else{
+          element.classList.remove("status-selected");
+        }
+      });
+
+      if(selectedSpot && (!spotState.has(selectedSpot) || spotState.get(selectedSpot).status !== "available")){
+        setSelected(null);
+      }
+      updatePrice();
+    }
+    function setGarage(newGarage){
+      if(!GARAGE_CONFIG[newGarage]){ return; }
+      currentGarage = newGarage;
+      if(localStorage.getItem(SELECTED_GARAGE_KEY) !== currentGarage){
+        localStorage.setItem(SELECTED_GARAGE_KEY, currentGarage);
+      }
+      currentLevels = GARAGE_CONFIG[currentGarage].levels.slice();
+      if(!currentLevels.includes(currentLevel)){
+        currentLevel = currentLevels[0];
+      }
+      if(garageSelect && garageSelect.value !== currentGarage){
+        garageSelect.value = currentGarage;
+      }
+      if(garageTitle){ garageTitle.textContent = currentGarage; }
+      updateBaseLayout();
+      renderLevelOptions();
+      if(levelSelect && levelSelect.value !== String(currentLevel)){
+        levelSelect.value = String(currentLevel);
+      }
+      updateLevelText();
+      setSelected(null);
+      renderGrid();
+    }
+    if(garageSelect){
+      garageSelect.addEventListener("change", (event)=>{
+        setGarage(event.target.value);
+      });
+    }
+    if(levelSelect){
+      levelSelect.addEventListener("change", (event)=>{
+        const value = Number(event.target.value);
+        if(Number.isNaN(value) || value === currentLevel){ return; }
+        currentLevel = value;
+        updateLevelText();
+        setSelected(null);
+        renderGrid();
+      });
+    }
+    window.addEventListener("storage", (event)=>{
+      if(event.key === GARAGE_SNAPSHOT_KEY){
+        snapshotCache = null;
+        updateBaseLayout();
+        renderGrid();
+      }
+      if(event.key === SELECTED_GARAGE_KEY && event.newValue && event.newValue !== currentGarage){
+        setGarage(event.newValue);
+      }
+    });
+
+    function updatePrice(){
+      const val = durationSel.value;
+      const total = (val === "day") ? PRICE_WHOLE_DAY : Number(val || 1) * PRICE_PER_HOUR;
+      totalPrice.textContent = `$${total.toFixed(2)}`;
+      payBtn.disabled = !selectedSpot;
+    }
+    durationSel.addEventListener("change", updatePrice);
+    startTimeInp.addEventListener("change", ()=>{});
+
+    function setSelected(id){
+      spotElements.forEach(el=>el.classList.remove("status-selected"));
+      if(!id){
+        selectedSpot = null;
+        selectedLabel.textContent = "No spot selected";
+        updatePrice();
+        return;
+      }
+      const state = spotState.get(id);
+      if(!state || state.status !== "available"){
+        selectedSpot = null;
+        selectedLabel.textContent = "No spot selected";
+        updatePrice();
+        return;
+      }
+      selectedSpot = id;
+      const node = spotElements.get(id);
+      if(node){ node.classList.add("status-selected"); }
+      selectedLabel.textContent = `Selected: Level ${currentLevel} • ${id}`;
+      updatePrice();
+    }
+
+    function handleSpotClick(id){
+      const state = spotState.get(id);
+      if(!state){ return; }
+      if(state.status !== "available"){
+        const byYou = state.reservation && state.reservation.user === user;
+        const endLabel = state.reservation ? new Date(state.reservation.endIso).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }) : "";
+        const descriptor = state.status === "reserved" ? "reserved" : "occupied";
+        const owner = byYou ? " (yours)" : "";
+        const until = endLabel ? ` until ${endLabel}` : "";
+        selectedLabel.textContent = `Spot ${id} is ${descriptor}${until}${owner}.`;
+        payBtn.disabled = true;
+        return;
+      }
+      setSelected(id);
+    }
+
+    function dist(a,b){
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.hypot(dx, dy);
+    }
+
+    function findNearestOpen(){
+      let bestId = null;
+      let bestDist = Infinity;
+      spotElements.forEach((el, id)=>{
+        if(spotState.get(id)?.status !== "available") return;
+        const center = spotCenters.get(id);
+        if(!center) return;
+        const d = dist(center, ENTRANCE_PX);
+        if(d < bestDist){
+          bestDist = d;
+          bestId = id;
+        }
+      });
+      return bestId;
+    }
+
+    nearestBtn.addEventListener("click", ()=>{
+      renderGrid();
+      const id = findNearestOpen();
+      if(id){
+        setSelected(id);
+      }else{
+        selectedLabel.textContent = "No available spots on this level right now.";
+      }
+    });
+    if(viewOnlyBtn){
+      viewOnlyBtn.addEventListener("click", ()=>{
+        localStorage.setItem(MODE_KEY, "view");
+        setSelected(null);
+        renderGrid();
+      });
+    }
+
+    function roundToNextQuarter(date = new Date()){
+      const d = new Date(date);
+      d.setSeconds(0,0);
+      const mins = d.getMinutes();
+      const next = Math.ceil(mins / 15) * 15;
+      if(next === 60){
+        d.setHours(d.getHours() + 1);
+        d.setMinutes(0);
+      }else{
+        d.setMinutes(next);
+      }
+      return d;
+    }
+    function setDefaultStartTime(){
+      const d = roundToNextQuarter();
+      const hh = String(d.getHours()).padStart(2,"0");
+      const mm = String(d.getMinutes()).padStart(2,"0");
+      startTimeInp.value = `${hh}:${mm}`;
+    }
+    function computeStartEnd(){
+      const [hh, mm] = (startTimeInp.value || "00:00").split(":").map(Number);
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0);
+      let end = new Date(start);
+      if (durationSel.value === "day"){
+        end.setHours(end.getHours() + 24);
+      }else{
+        end.setHours(end.getHours() + Number(durationSel.value || 1));
+      }
+      const total = (durationSel.value === "day")
+        ? PRICE_WHOLE_DAY
+        : Number(durationSel.value || 1) * PRICE_PER_HOUR;
+      return { start, end, total };
+    }
+
+    function hasActiveReservation(){
+      const now = Date.now();
+      return readReservations().some(res=>{
+        if(res.user !== user){ return false; }
+        if(res.status === "Cancelled" || res.status === "Completed"){ return false; }
+        const end = new Date(res.endIso).getTime();
+        return end > now;
+      });
+    }
+    const SINGLE_RESERVATION_MSG = "You already have an active reservation. You can only hold one spot at a time.";
+    let pendingError = "";
+
+    function configureConfirmAction(hasError){
+      if(!confirmPayBtn){ return; }
+      confirmPayBtn.disabled = hasError;
+      confirmPayBtn.style.display = hasError ? "none" : "";
+    }
+    async function renderQrCode(target){
+      if(!target){ return; }
+      target.innerHTML = `<img src="qr-code.png" alt="QR code placeholder" />`;
+    }
+    function formatStamp(iso){
+      return new Date(iso).toLocaleString([], { dateStyle:"medium", timeStyle:"short" });
+    }
+    function openQrModal(record){
+      if(!qrDialog){ return; }
+      renderQrCode(qrCodeEl);
+      if(qrDetails){
+        qrDetails.innerHTML = `
+          <li><span>Garage</span><strong>${record.garage}</strong></li>
+          <li><span>Spot</span><strong>Level ${record.level} • ${record.spot}</strong></li>
+          <li><span>Start</span><strong>${formatStamp(record.startIso)}</strong></li>
+          <li><span>End</span><strong>${formatStamp(record.endIso)}</strong></li>
+        `;
+      }
+      qrDialog.showModal();
+    }
+    qrDialog?.addEventListener("close", ()=>{
+      if(qrCodeEl){
+        qrCodeEl.innerHTML = "";
+      }
+    });
+    qrNavBtn?.addEventListener("click", ()=>{
+      qrDialog.close("nav");
+      window.location.href = "reservations.html";
+    });
+
+    payBtn.addEventListener("click", ()=>{
+      // If the user already has an active reservation, surface the message inside the modal.
+      pendingError = hasActiveReservation() ? SINGLE_RESERVATION_MSG : "";
+      if(!selectedSpot) return;
+      const { start, end, total } = computeStartEnd();
+      const durLabel = (durationSel.value === "day")
+        ? "Whole day (24h)"
+        : `${Number(durationSel.value)} hr(s)`;
+      const startLabel = start.toLocaleString([], { dateStyle:"medium", timeStyle:"short" });
+      const endLabel = end.toLocaleString([], { dateStyle:"medium", timeStyle:"short" });
+      const totalLabel = `$${total.toFixed(2)}`;
+      confirmText.innerHTML = `
+        <div class="confirm-summary">
+          <p class="confirm-lede">Reserve <strong>Level ${currentLevel}</strong>, spot <strong>${selectedSpot}</strong></p>
+          <ul class="confirm-details">
+            <li><span>Duration</span><strong>${durLabel}</strong></li>
+            <li><span>Start</span><strong>${startLabel}</strong></li>
+            <li><span>End</span><strong>${endLabel}</strong></li>
+            <li><span>Total</span><strong class="amount">${totalLabel}</strong></li>
+          </ul>
+          ${pendingError ? `<div class="confirm-error">${pendingError}</div>` : ""}
+        </div>
+      `;
+      configureConfirmAction(!!pendingError);
+
+      if(typeof payDialog.showModal === "function"){
+        payDialog.showModal();
+      }else{
+        if(confirm(confirmText.textContent)) confirmPayBtn.click();
+      }
+    });
+
+    confirmPayBtn.addEventListener("click", ()=>{
+      if(hasActiveReservation()){
+        confirmText.querySelector(".confirm-error")?.remove();
+        confirmText.insertAdjacentHTML("beforeend", `<div class="confirm-error">${SINGLE_RESERVATION_MSG}</div>`);
+        configureConfirmAction(true);
+        return;
+      }
+      if(!selectedSpot) return;
+      const { start, end, total } = computeStartEnd();
+      const record = {
+        id: `R-${Date.now()}`,
+        garage: currentGarage,
+        level: currentLevel,
+        spot: selectedSpot,
+        user: user,
+        startIso: start.toISOString(),
+        endIso: end.toISOString(),
+        total,
+        status: "Active"
+      };
+      const list = readReservations();
+      list.push(record);
+      saveReservations(list);
+      setSelected(null);
+      configureConfirmAction(false);
+      payDialog.close("ok");
+      openQrModal(record);
+    });
+
+    function handleMode(){
+      const mode = localStorage.getItem(MODE_KEY) || "select";
+      if(mode === "nearest"){
+        renderGrid();
+        const id = findNearestOpen();
+        if(id) setSelected(id);
+      }
+    }
+
+    setInterval(()=>{
+      const keep = selectedSpot;
+      renderGrid();
+      if(keep && spotState.get(keep)?.status === "available"){
+        setSelected(keep);
+      }
+    }, 30000);
+    window.addEventListener("storage", (event)=>{
+      if(event.key === RESERVATIONS_KEY){
+        renderGrid();
+      }
+    });
+
+    buildMapLayout();
+    if(garageSelect){ garageSelect.value = currentGarage; }
+    setGarage(currentGarage);
+    setDefaultStartTime();
+    updatePrice();
+    handleMode();
+  </script>
+</body>
+</html>
